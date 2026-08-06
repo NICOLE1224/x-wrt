@@ -88,7 +88,8 @@ define Build/onie-installer
 	mkdir -p $@.onie/payload
 	$(TAR) --numeric-owner --owner=0 --group=0 --sort=name \
 		$(if $(SOURCE_DATE_EPOCH),--mtime=@$(SOURCE_DATE_EPOCH)) \
-		-C $(TARGET_DIR)/ -cf - . | libdeflate-gzip -n9 > $@.onie/payload/rootfs.tar.gz
+		-C $(TARGET_DIR)/ -cf - . | $(STAGING_DIR_HOST)/bin/libdeflate-gzip \
+		-12 -c > $@.onie/payload/rootfs.tar.gz
 	$(CP) $(KDIR)/$(KERNEL_NAME) $@.onie/payload/vmlinuz
 	$(TAR) --numeric-owner --owner=0 --group=0 --sort=name \
 		$(if $(SOURCE_DATE_EPOCH),--mtime=@$(SOURCE_DATE_EPOCH)) \
