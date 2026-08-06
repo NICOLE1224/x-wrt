@@ -28,7 +28,6 @@ jobs:
         ref: tenda-be12-pro
         fetch-depth: 0
         fetch-tags: false
-        filter: blob:none
 
     - name: Sync upstream release tag
       id: sync
@@ -65,20 +64,16 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-        git fetch --no-tags --filter=blob:none upstream \
+        git fetch --no-tags upstream \
           "refs/tags/${upstream_tag}:refs/tags/upstream/${upstream_tag}"
 
-        if ! git merge --no-edit "refs/tags/upstream/${upstream_tag}"; then
-          conflicts="$(git diff --name-only --diff-filter=U)"
-          if [ "${conflicts}" != "feeds.conf.default" ]; then
-            printf '%s\n' "${conflicts}"
-            exit 1
-          fi
+        current_head="$(git rev-parse HEAD)"
+        upstream_commit="$(git rev-parse "refs/tags/upstream/${upstream_tag}^{commit}")"
+        workflow_path='.github/workflows/sync-tenda-be12-pro.yml'
 
-          git checkout --theirs feeds.conf.default
-          git add feeds.conf.default
-          git commit --no-edit
-        fi
+        # Rebuild from the exact upstream tree, then restore the two owned overlays.
+        git read-tree --reset -u "${upstream_commit}"
+        git checkout "${current_head}" -- "${workflow_path}"
 
         sed -i \
           's#^src-git x .*#src-git x https://github.com/NICOLE1224/com.x-wrt.git;tenda-be12-pro#' \
@@ -88,10 +83,28 @@ jobs:
           'src-git x https://github.com/NICOLE1224/com.x-wrt.git;tenda-be12-pro' \
           feeds.conf.default
 
-        if ! git diff --quiet -- feeds.conf.default; then
-          git add feeds.conf.default
-          git commit -s -m "feeds: use BE12 Pro custom feed for ${upstream_tag}"
-        fi
+        git add "${workflow_path}" feeds.conf.default
+        git diff --quiet
+        git diff --cached --check
+
+        while IFS= read -r changed_path; do
+          case "${changed_path}" in
+            "${workflow_path}"|feeds.conf.default|'') ;;
+            *)
+              echo "Unexpected fork-owned path: ${changed_path}"
+              exit 1
+              ;;
+          esac
+        done <<EOF
+        $(git diff --cached --name-only "${upstream_commit}")
+        EOF
+
+        tree="$(git write-tree)"
+        merge_commit="$(
+          printf 'sync: import upstream %s\n' "${upstream_tag}" |
+            git commit-tree "${tree}" -p "${current_head}" -p "${upstream_commit}"
+        )"
+        git reset --hard "${merge_commit}"
 
         git tag -a "${upstream_tag}" -m "X-WRT BE12 Pro ${upstream_tag}"
         git push origin HEAD:tenda-be12-pro
