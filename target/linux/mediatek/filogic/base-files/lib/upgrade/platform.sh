@@ -343,7 +343,6 @@ platform_do_upgrade() {
 	tenda,ax12l-pro|\
 	totolink,x6000r|\
 	wavlink,wl-wn573hx3|\
-	wavlink,wl-wnt100x3|\
 	widelantech,wap430x|\
 	xwrt,wr3000k-emmc-nor|\
 	yuncore,ax835)
