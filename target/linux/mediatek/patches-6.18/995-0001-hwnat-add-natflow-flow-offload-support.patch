@@ -2290,7 +2290,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  }
  
  static void
-@@ -2669,6 +2677,33 @@ out:
+@@ -2674,6 +2682,33 @@ out:
  	return ret;
  }
  
@@ -2324,7 +2324,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  void mtk_wed_flow_remove(int index)
  {
  	struct mtk_wed_hw *hw = hw_list[index];
-@@ -2691,6 +2726,7 @@ out:
+@@ -2696,6 +2731,7 @@ out:
  	mutex_unlock(&hw_lock);
  }
  
@@ -2332,7 +2332,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static int
  mtk_wed_setup_tc_block_cb(enum tc_setup_type type, void *type_data, void *cb_priv)
  {
-@@ -2784,6 +2820,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
+@@ -2789,6 +2825,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
  	default:
  		return -EOPNOTSUPP;
  	}
@@ -2389,7 +2389,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define PPP_VERSION	"2.4.2"
  
  /*
-@@ -1616,6 +1618,26 @@ static int ppp_fill_forward_path(struct
+@@ -1620,6 +1622,26 @@ static int ppp_fill_forward_path(struct
  	return chan->ops->fill_forward_path(ctx, path, chan);
  }
  
@@ -2416,7 +2416,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct net_device_ops ppp_netdev_ops = {
  	.ndo_init	 = ppp_dev_init,
  	.ndo_uninit      = ppp_dev_uninit,
-@@ -1623,6 +1645,7 @@ static const struct net_device_ops ppp_n
+@@ -1627,6 +1649,7 @@ static const struct net_device_ops ppp_n
  	.ndo_siocdevprivate = ppp_net_siocdevprivate,
  	.ndo_get_stats64 = ppp_get_stats64,
  	.ndo_fill_forward_path = ppp_fill_forward_path,
@@ -2435,7 +2435,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #include <linux/nsproxy.h>
  #include <net/net_namespace.h>
  #include <net/netns/generic.h>
-@@ -1006,9 +1008,30 @@ static int pppoe_fill_forward_path(struc
+@@ -1007,9 +1009,30 @@ static int pppoe_fill_forward_path(struc
  	return 0;
  }
  
