@@ -85,7 +85,8 @@ jobs:
 
         git add "${workflow_path}" feeds.conf.default
         git diff --quiet
-        git diff --cached --check
+        git diff --cached --check "${upstream_commit}" -- \
+          "${workflow_path}" feeds.conf.default
 
         while IFS= read -r changed_path; do
           case "${changed_path}" in
