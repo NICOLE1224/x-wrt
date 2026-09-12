@@ -167,31 +167,39 @@ define Build/zyxel-tar-bz2
 endef
 
 define Build/xwrt_csac10-factory
-  -[ -f "$@" ] && \
-  mkdir -p "$@.tmp" && \
-  mv "$@" "$@.tmp/UploadBrush-bin.img" && \
-  binmd5=$$($(STAGING_DIR_HOST)/bin/mkhash md5 "$@.tmp/UploadBrush-bin.img" | head -c32) && \
-  oemmd5=$$(echo -n TB-CSAC10-QCA9563_9886-ROUTE-CSAC10 | $(STAGING_DIR_HOST)/bin/mkhash md5 | head -c32) && \
-  echo -n $${binmd5}$${oemmd5} | $(STAGING_DIR_HOST)/bin/mkhash md5 | head -c32 >"$@.tmp/bin_random_oem.txt" && \
-  echo -n V4.4-201910201745 >"$@.tmp/version.txt" && \
-  $(TAR) -czf $@.tmp.tgz -C "$@.tmp" UploadBrush-bin.img bin_random_oem.txt version.txt && \
-  $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -md md5 -salt -in $@.tmp.tgz -out "$@" -k QiLunSmartWL && \
-  printf %32s CSAC10 >>"$@" && \
-  rm -rf "$@.tmp" $@.tmp.tgz
+  if [ -f "$@" ]; then \
+    { \
+      mkdir -p "$@.tmp" && \
+      mv "$@" "$@.tmp/UploadBrush-bin.img" && \
+      binmd5=$$($(STAGING_DIR_HOST)/bin/mkhash md5 "$@.tmp/UploadBrush-bin.img") && \
+      oemmd5=$$(printf '%s' TB-CSAC10-QCA9563_9886-ROUTE-CSAC10 | $(STAGING_DIR_HOST)/bin/mkhash md5) && \
+      authmd5=$$(printf '%s' "$${binmd5}$${oemmd5}" | $(STAGING_DIR_HOST)/bin/mkhash md5) && \
+      printf '%s' "$$authmd5" >"$@.tmp/bin_random_oem.txt" && \
+      printf '%s' V4.4-201910201745 >"$@.tmp/version.txt" && \
+      $(TAR) -czf "$@.tmp.tgz" -C "$@.tmp" UploadBrush-bin.img bin_random_oem.txt version.txt && \
+      $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -md md5 -salt -in "$@.tmp.tgz" -out "$@" -k QiLunSmartWL && \
+      printf %32s CSAC10 >>"$@" && \
+      rm -rf "$@.tmp" "$@.tmp.tgz"; \
+    } || { rm -f "$@"; exit 1; }; \
+  fi
 endef
 
 define Build/xwrt_csac05-factory
-  -[ -f "$@" ] && \
-  mkdir -p "$@.tmp" && \
-  mv "$@" "$@.tmp/UploadBrush-bin.img" && \
-  binmd5=$$($(STAGING_DIR_HOST)/bin/mkhash md5 "$@.tmp/UploadBrush-bin.img" | head -c32) && \
-  oemmd5=$$(echo -n TB-CSAC05-QCA9563_9886-ROUTE-CSAC05 | $(STAGING_DIR_HOST)/bin/mkhash md5 | head -c32) && \
-  echo -n $${binmd5}$${oemmd5} | $(STAGING_DIR_HOST)/bin/mkhash md5 | head -c32 >"$@.tmp/bin_random_oem.txt" && \
-  echo -n V4.4-201910201745 >"$@.tmp/version.txt" && \
-  $(TAR) -czf $@.tmp.tgz -C "$@.tmp" UploadBrush-bin.img bin_random_oem.txt version.txt && \
-  $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -md md5 -salt -in $@.tmp.tgz -out "$@" -k QiLunSmartWL && \
-  printf %32s CSAC05 >>"$@" && \
-  rm -rf "$@.tmp" $@.tmp.tgz
+  if [ -f "$@" ]; then \
+    { \
+      mkdir -p "$@.tmp" && \
+      mv "$@" "$@.tmp/UploadBrush-bin.img" && \
+      binmd5=$$($(STAGING_DIR_HOST)/bin/mkhash md5 "$@.tmp/UploadBrush-bin.img") && \
+      oemmd5=$$(printf '%s' TB-CSAC05-QCA9563_9886-ROUTE-CSAC05 | $(STAGING_DIR_HOST)/bin/mkhash md5) && \
+      authmd5=$$(printf '%s' "$${binmd5}$${oemmd5}" | $(STAGING_DIR_HOST)/bin/mkhash md5) && \
+      printf '%s' "$$authmd5" >"$@.tmp/bin_random_oem.txt" && \
+      printf '%s' V4.4-201910201745 >"$@.tmp/version.txt" && \
+      $(TAR) -czf "$@.tmp.tgz" -C "$@.tmp" UploadBrush-bin.img bin_random_oem.txt version.txt && \
+      $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -md md5 -salt -in "$@.tmp.tgz" -out "$@" -k QiLunSmartWL && \
+      printf %32s CSAC05 >>"$@" && \
+      rm -rf "$@.tmp" "$@.tmp.tgz"; \
+    } || { rm -f "$@"; exit 1; }; \
+  fi
 endef
 
 define Device/8dev_carambola2
@@ -683,9 +691,9 @@ define Device/bm100_hq55
   KERNEL := kernel-bin | append-dtb | lzma | uImage lzma -M 0x4f4b4c49
   IMAGES += loader-factory.bin uboot-factory.bin breed-factory.bin
   IMAGE/loader-factory.bin := append-okli-kernel $(1)
-  IMAGE/uboot-factory.bin := append-okli-kernel $(1) | pad-to 64k | append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs
+  IMAGE/uboot-factory.bin := append-okli-kernel $(1) | pad-to 64k | append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs | check-size 16000k
   IMAGE/breed-factory.bin := append-rootfs-64k | append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs | \
-			     pad-to 14720k | append-okli-kernel $(1)
+			     pad-to 14720k | append-okli-kernel $(1) | check-size 16000k
 endef
 TARGET_DEVICES += bm100_hq55
 
@@ -3398,7 +3406,7 @@ define Device/xwrt_csac2
   KERNEL := kernel-bin | append-dtb | lzma | uImage lzma -M 0x4f4b4c49
   IMAGES += breed-factory.bin factory-10.bin factory-05.bin
   IMAGE/breed-factory.bin := append-okli-kernel $(1) | pad-to 64k | append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs | \
-			     pad-to 14528k | append-okli-kernel $(1)
+			     pad-to 14528k | append-okli-kernel $(1) | check-size 16000k
   IMAGE/factory-10.bin := $$(IMAGE/breed-factory.bin) | xwrt_csac10-factory $(1)
   IMAGE/factory-05.bin := $$(IMAGE/breed-factory.bin) | xwrt_csac05-factory $(1)
   DEVICE_PACKAGES := kmod-leds-reset kmod-ath10k-ct ath10k-firmware-qca9888-ct kmod-usb-core kmod-usb2 lte-modem-xwrt-csac

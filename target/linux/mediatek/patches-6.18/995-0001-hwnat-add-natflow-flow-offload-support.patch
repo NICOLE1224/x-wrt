@@ -312,7 +312,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	}
  
  	/* set interrupt delays based on current Net DIM sample */
-@@ -5170,6 +5250,54 @@ static netdev_features_t mtk_features_ch
+@@ -5170,6 +5250,56 @@ static netdev_features_t mtk_features_ch
  }
  #endif
  
@@ -351,7 +351,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		return -EINVAL;
 +
 +	if ((path->flags & FLOW_OFFLOAD_PATH_STOP)) {
-+		mtk_flow_offload_stop();
++		struct mtk_mac *mac = netdev_priv(path->dev);
++
++		mtk_flow_offload_stop(mac->hw);
 +	} else if ((path->flags & FLOW_OFFLOAD_PATH_DEL)) {
 +		struct mtk_mac *mac = netdev_priv(path->dev);
 +		struct mtk_eth *eth = mac->hw;
@@ -367,7 +369,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct ethtool_ops mtk_ethtool_ops = {
  	.get_link_ksettings	= mtk_get_link_ksettings,
  	.set_link_ksettings	= mtk_set_link_ksettings,
-@@ -5205,7 +5333,8 @@ static const struct net_device_ops mtk_n
+@@ -5205,7 +5335,8 @@ static const struct net_device_ops mtk_n
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mtk_poll_controller,
  #endif
@@ -377,7 +379,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	.ndo_bpf		= mtk_xdp,
  	.ndo_xdp_xmit		= mtk_xdp_xmit,
  	.ndo_select_queue	= mtk_select_queue,
-@@ -5864,7 +5993,8 @@ static int mtk_probe(struct platform_dev
+@@ -5863,7 +5994,8 @@ static int mtk_probe(struct platform_dev
  err_unreg_netdev:
  	mtk_unreg_dev(eth);
  err_deinit_ppe:
@@ -387,7 +389,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	mtk_mdio_cleanup(eth);
  err_free_dev:
  	mtk_free_dev(eth);
-@@ -5884,6 +6014,8 @@ static void mtk_remove(struct platform_d
+@@ -5883,6 +6015,8 @@ static void mtk_remove(struct platform_d
  	struct mtk_mac *mac;
  	int i;
  
@@ -485,7 +487,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			 flow_offload_hw_path_t *src,
 +			 flow_offload_hw_path_t *dest);
 +void mtk_flow_offload_foe_delete(struct mtk_eth *eth, int ppe_idx, u16 hash);
-+void mtk_flow_offload_stop(void);
++void mtk_flow_offload_stop(struct mtk_eth *eth);
 +int mtk_offload_check_rx(struct mtk_eth *eth, int ppe_idx, struct sk_buff *skb, u32 rxd4);
 +int mtk_offload_check_rx_v2(struct mtk_eth *eth, int ppe_idx, struct sk_buff *skb, u32 rxd5);
  int mtk_eth_offload_init(struct mtk_eth *eth, u8 id);
@@ -570,13 +572,14 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct mtk_ppe *mtk_ppe_init(struct mtk_eth *eth, void __iomem *base, int index);
  
  void mtk_ppe_deinit(struct mtk_eth *eth);
-@@ -378,10 +400,14 @@ mtk_ppe_check_skb(struct mtk_ppe *ppe, s
+@@ -378,10 +400,15 @@ mtk_ppe_check_skb(struct mtk_ppe *ppe, s
  	ppe->foe_check_time[hash] = now;
  	__mtk_ppe_check_skb(ppe, skb, hash);
  }
 +#endif
 +
 +struct mtk_ppe_account_group *mtk_ppe_account_group_get(u32 idx);
++u32 *mtk_foe_entry_ib2(struct mtk_eth *eth, struct mtk_foe_entry *entry);
  
  int mtk_foe_entry_prepare(struct mtk_eth *eth, struct mtk_foe_entry *entry,
  			  int type, int l4proto, u8 pse_port, u8 *src_mac,
@@ -585,7 +588,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int mtk_foe_entry_set_pse_port(struct mtk_eth *eth,
  			       struct mtk_foe_entry *entry, u8 port);
  int mtk_foe_entry_set_ipv4_tuple(struct mtk_eth *eth,
-@@ -403,10 +429,13 @@ int mtk_foe_entry_set_wdma(struct mtk_et
+@@ -403,10 +430,13 @@ int mtk_foe_entry_set_wdma(struct mtk_et
  			   bool amsdu_en);
  int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
  			    unsigned int queue);
@@ -770,7 +773,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	return &entry->ipv4.l2;
 +}
 +
-+static inline u32 *
++u32 *
 +mtk_foe_entry_ib2(struct mtk_eth *eth, struct mtk_foe_entry *entry)
 +{
 +	int type = mtk_get_ib1_pkt_type(eth, entry->ib1);
@@ -1494,7 +1497,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return 0;
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-@@ -0,0 +1,741 @@
+@@ -0,0 +1,753 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + *  Copyright (C) 2020 Felix Fietkau <nbd@nbd.name>
@@ -1532,6 +1535,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	struct mtk_ppe_account_group *ag;
 +	struct mtk_eth *eth = (struct mtk_eth *)ag_timer_eth;
 +	int (*func)(unsigned int, unsigned long, unsigned long, unsigned int *, unsigned int *, int, unsigned long);
++	rcu_read_lock();
 +	for (i = 1; i < 64; i++) {
 +		ag = mtk_ppe_account_group_get(i);
 +		if (ag->state == MTK_FOE_STATE_BIND) {
@@ -1549,7 +1553,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			ag->speed_packets[(jiffies/HZ/2) % 4] += (unsigned int)packets;
 +			spin_unlock_bh(&mtk_ppe_ag_lock);
 +
-+			if ((func = ag->priv) != NULL && (((jiffies/HZ) % 2 == 0 && i % 2 == 0) || ((jiffies/HZ) % 2 == 1 && i % 2 == 1)) ) {
++			if (ag->priv && (func = rcu_dereference(eth->flow_func)) != NULL && (((jiffies/HZ) % 2 == 0 && i % 2 == 0) || ((jiffies/HZ) % 2 == 1 && i % 2 == 1)) ) {
 +				struct mtk_foe_entry *entry = mtk_foe_get_entry(eth->ppe[0], ag->hash);
 +				if (FIELD_GET(MTK_FOE_IB1_STATE, entry->ib1) == MTK_FOE_STATE_BIND && bytes > 0 && packets > 0) {
 +					spin_lock_bh(&mtk_ppe_ag_lock);
@@ -1577,6 +1581,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			}
 +		}
 +	}
++
++	rcu_read_unlock();
 +
 +	if (!ag_timer_stopping)
 +		mod_timer(&ag_timer, jiffies + HZ * 1);
@@ -1825,14 +1831,18 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +#endif
 +
 +	if (dest->dsa_port != 0xffff) {
++		u16 dsa_port = dest->dsa_port;
++
++		if (dsa_port & 0xff00)
++			dsa_port &= 0xf;
 +		if (pse_port == PSE_GDM1_PORT || pse_port == PSE_GDM2_PORT || pse_port == PSE_GDM3_PORT) {
-+			if ((dest->dsa_port & 0xff) < MTK_DSA_USER_PORT_MAX) {
++			if (dsa_port < MTK_DSA_USER_PORT_MAX) {
 +				struct mtk_mac *mac = netdev_priv(dest->dev);
-+				mtk_foe_entry_set_queue(eth, entry, mac->dsa_queue_base + mac->dsa_port_rank[(dest->dsa_port & 0xff)]);
++				mtk_foe_entry_set_queue(eth, entry, mac->dsa_queue_base + mac->dsa_port_rank[dsa_port]);
 +			}
 +		}
 +		if ((dest->dsa_port & 0xff00)) {
-+			mtk_foe_entry_set_vlan(eth, entry, (dest->dsa_port & 0xff00) >> 8);
++			mtk_foe_entry_set_vlan(eth, entry, dest->dsa_port >> 4);
 +		} else {
 +			mtk_foe_entry_set_dsa(eth, entry, dest->dsa_port);
 +		}
@@ -1950,14 +1960,18 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +#endif
 +
 +	if (dest->dsa_port != 0xffff) {
++		u16 dsa_port = dest->dsa_port;
++
++		if (dsa_port & 0xff00)
++			dsa_port &= 0xf;
 +		if (pse_port == PSE_GDM1_PORT || pse_port == PSE_GDM2_PORT || pse_port == PSE_GDM3_PORT) {
-+			if ((dest->dsa_port & 0xff) < MTK_DSA_USER_PORT_MAX) {
++			if (dsa_port < MTK_DSA_USER_PORT_MAX) {
 +				struct mtk_mac *mac = netdev_priv(dest->dev);
-+				mtk_foe_entry_set_queue(eth, entry, mac->dsa_queue_base + mac->dsa_port_rank[(dest->dsa_port & 0xff)]);
++				mtk_foe_entry_set_queue(eth, entry, mac->dsa_queue_base + mac->dsa_port_rank[dsa_port]);
 +			}
 +		}
 +		if ((dest->dsa_port & 0xff00)) {
-+			mtk_foe_entry_set_vlan(eth, entry, (dest->dsa_port & 0xff00) >> 8);
++			mtk_foe_entry_set_vlan(eth, entry, dest->dsa_port >> 4);
 +		} else {
 +			mtk_foe_entry_set_dsa(eth, entry, dest->dsa_port);
 +		}
@@ -2049,7 +2063,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +
 +	if (mtk_is_netsys_v1(eth)) {
 +		//sync ag hash with foe hash
-+		ag_idx = FIELD_GET(MTK_FOE_IB2_PORT_AG, orig.ipv4.ib2);
++		ag_idx = FIELD_GET(MTK_FOE_IB2_PORT_AG, *mtk_foe_entry_ib2(eth, &orig));
 +		ag = mtk_ppe_account_group_get(ag_idx);
 +		if (ag) {
 +			ag->priv = NULL;
@@ -2057,7 +2071,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			ag->state = MTK_FOE_STATE_BIND;
 +		}
 +
-+		ag_idx = FIELD_GET(MTK_FOE_IB2_PORT_AG, reply.ipv4.ib2);
++		ag_idx = FIELD_GET(MTK_FOE_IB2_PORT_AG, *mtk_foe_entry_ib2(eth, &reply));
 +		ag = mtk_ppe_account_group_get(ag_idx);
 +		if (ag) {
 +			ag->priv = NULL;
@@ -2094,13 +2108,14 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	mtk_foe_entry_clear(eth->ppe[ppe_idx], hash);
 +}
 +
-+void mtk_flow_offload_stop(void)
++void mtk_flow_offload_stop(struct mtk_eth *eth)
 +{
-+	struct mtk_eth *eth = (struct mtk_eth *)ag_timer_eth;
++	/* The caller has stopped publishing flows and can sleep here. */
++	rcu_assign_pointer(eth->flow_func, NULL);
++	synchronize_rcu();
 +
-+	if (eth) {
++	if (mtk_is_netsys_v1(eth))
 +		mtk_ppe_account_group_walk_stop();
-+	}
 +}
 +
 +void mtk_offload_keepalive(struct mtk_eth *eth, int ppe_idx, unsigned int hash)
@@ -2120,7 +2135,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			}
 +		} else if (func) {
 +			struct mtk_foe_entry *entry = mtk_foe_get_entry(eth->ppe[ppe_idx], hash);
-+			u32 ag_idx = FIELD_GET(MTK_FOE_IB2_PORT_AG, entry->ipv4.ib2);
++			u32 ag_idx = FIELD_GET(MTK_FOE_IB2_PORT_AG, *mtk_foe_entry_ib2(eth, entry));
 +			struct mtk_ppe_account_group *ag = mtk_ppe_account_group_get(ag_idx);
 +			if (ag && ag->state == MTK_FOE_STATE_BIND && ag->hash == hash && ag->priv != func) {
 +				unsigned long long bytes;
@@ -2389,7 +2404,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define PPP_VERSION	"2.4.2"
  
  /*
-@@ -1620,6 +1622,26 @@ static int ppp_fill_forward_path(struct
+@@ -1620,6 +1622,35 @@ static int ppp_fill_forward_path(struct
  	return chan->ops->fill_forward_path(ctx, path, chan);
  }
  
@@ -2398,25 +2413,34 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	struct ppp *ppp = netdev_priv(path->dev);
 +	struct ppp_channel *chan;
 +	struct channel *pch;
++	int ret = -ENODEV;
 +
 +	if (ppp->flags & SC_MULTILINK)
 +		return -EOPNOTSUPP;
 +
-+	if (list_empty(&ppp->channels))
-+		return -ENODEV;
++	rcu_read_lock();
++	pch = list_first_or_null_rcu(&ppp->channels, struct channel, clist);
++	if (!pch)
++		goto out;
 +
-+	pch = list_first_entry(&ppp->channels, struct channel, clist);
-+	chan = pch->chan;
++	chan = READ_ONCE(pch->chan);
++	if (!chan)
++		goto out;
++
++	ret = -EOPNOTSUPP;
 +	if (!chan->ops->flow_offload_check)
-+		return -EOPNOTSUPP;
++		goto out;
 +
-+	return chan->ops->flow_offload_check(chan, path);
++	ret = chan->ops->flow_offload_check(chan, path);
++out:
++	rcu_read_unlock();
++	return ret;
 +}
 +
  static const struct net_device_ops ppp_netdev_ops = {
  	.ndo_init	 = ppp_dev_init,
  	.ndo_uninit      = ppp_dev_uninit,
-@@ -1627,6 +1649,7 @@ static const struct net_device_ops ppp_n
+@@ -1627,6 +1658,7 @@ static const struct net_device_ops ppp_n
  	.ndo_siocdevprivate = ppp_net_siocdevprivate,
  	.ndo_get_stats64 = ppp_get_stats64,
  	.ndo_fill_forward_path = ppp_fill_forward_path,
@@ -2518,7 +2542,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -187,6 +187,60 @@ struct flow_offload {
+@@ -187,6 +187,61 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
  };
  
@@ -2573,6 +2597,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	u16 vlan_proto;
 +	u16 vlan_id;
 +	u16 pppoe_sid;
++	/* Native port or (MxL outer VID << 4) | port; 0xffff means no DSA. */
 +	u16 dsa_port;
 +};
 +
@@ -2709,7 +2734,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	path->dev = dsa_user_to_conduit(dev);
 +	path->flags |= FLOW_OFFLOAD_PATH_DSA;
 +	if (dp->cpu_dp->tag_ops->proto == DSA_TAG_PROTO_MXL862_8021Q) {
-+		path->dsa_port |= (dsa_tag_8021q_standalone_vid(dp) << 8);
++		path->dsa_port |= (dsa_tag_8021q_standalone_vid(dp) << 4);
 +	}
 +
 +	if (path->dev->netdev_ops->ndo_flow_offload_check)

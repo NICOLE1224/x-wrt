@@ -58,7 +58,8 @@ define Build/simplefit
 endef
 
 define Build/sysupgrade-initramfs-tar
-	-[ -f "$@" ] && mv "$@" "$@.kernel"
+	test -s "$@"
+	mv "$@" "$@.kernel"
 	touch "$@.rootfs"
 	sh $(TOPDIR)/scripts/sysupgrade-tar.sh \
 		--board $(if $(BOARD_NAME),$(BOARD_NAME),$(DEVICE_NAME)) \
@@ -71,15 +72,20 @@ endef
 define Build/tenbay-factory
   $(eval model=$(word 1,$(1)))
   $(eval magic=$(word 2,$(1)))
-  mkdir -p "$@.tmp"
-  mv "$@" "$@.tmp/UploadBrush-bin.img"
-  $(MKHASH) md5 "$@.tmp/UploadBrush-bin.img" | head -c32 > "$@.tmp/check_MD5.txt"
-  echo -n $$(cat "$@.tmp/check_MD5.txt" | head -c32)$$(echo -n $(magic)$(model) | $(MKHASH) md5 | head -c32) | $(MKHASH) md5 | head -c32 >"$@.tmp/bin_random_oem.txt"
-  echo -n V9.9-222222222222 >"$@.tmp/version.txt"
-  $(TAR) -czf "$@.tmp.tgz" -C "$@.tmp" UploadBrush-bin.img check_MD5.txt bin_random_oem.txt version.txt
-  $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -e -salt -in "$@.tmp.tgz" -out "$@" -k QiLunSmartWL
-  printf %32s $(model) >> "$@"
-  rm -rf "$@.tmp" "$@.tmp.tgz"
+  { \
+    mkdir -p "$@.tmp" && \
+    mv "$@" "$@.tmp/UploadBrush-bin.img" && \
+    binmd5=$$($(MKHASH) md5 "$@.tmp/UploadBrush-bin.img") && \
+    oemmd5=$$(printf '%s' '$(magic)$(model)' | $(MKHASH) md5) && \
+    authmd5=$$(printf '%s' "$${binmd5}$${oemmd5}" | $(MKHASH) md5) && \
+    printf '%s' "$$binmd5" >"$@.tmp/check_MD5.txt" && \
+    printf '%s' "$$authmd5" >"$@.tmp/bin_random_oem.txt" && \
+    printf '%s' V9.9-222222222222 >"$@.tmp/version.txt" && \
+    $(TAR) -czf "$@.tmp.tgz" -C "$@.tmp" UploadBrush-bin.img check_MD5.txt bin_random_oem.txt version.txt && \
+    $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -e -salt -in "$@.tmp.tgz" -out "$@" -k QiLunSmartWL && \
+    printf %32s '$(model)' >>"$@" && \
+    rm -rf "$@.tmp" "$@.tmp.tgz"; \
+  } || { rm -f "$@"; exit 1; }
 endef
 
 define Build/mt798x-gpt
@@ -1040,7 +1046,7 @@ define Device/cetron_ct3003-ubootlayout
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
-  IMAGE_SIZE := 114816k
+  IMAGE_SIZE := 113152k
   KERNEL_IN_UBI := 1
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
   IMAGES += factory.bin
@@ -1148,7 +1154,7 @@ define Device/cmcc_mr3000d-ciq-256m
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
-  IMAGE_SIZE := 65536k
+  IMAGE_SIZE := 49152k
   KERNEL_IN_UBI := 1
   IMAGES += factory.bin
   IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
@@ -1172,12 +1178,15 @@ define Device/cmcc_rax3000m
   DEVICE_ALT0_VENDOR := CMCC
   DEVICE_ALT0_MODEL := RAX3000Me
   DEVICE_DTS := mt7981b-cmcc-rax3000m
-  DEVICE_DTS_OVERLAY := mt7981b-cmcc-rax3000m-emmc mt7981b-cmcc-rax3000m-nand
+  DEVICE_DTS_OVERLAY := mt7981b-cmcc-rax3000m-emmc mt7981b-cmcc-rax3000m-nand mt7981b-cmcc-rax3000m-ubi
   DEVICE_DTS_DIR := ../dts
   DEVICE_DTC_FLAGS := --pad 4096
   DEVICE_DTS_LOADADDR := 0x43f00000
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware kmod-usb3 \
 	e2fsprogs f2fsck mkf2fs kmod-fs-ext4 tune2fs ethtool blockd blkid fdisk gdisk partx-utils
+  DEVICE_COMPAT_VERSION := 1.1
+  DEVICE_COMPAT_MESSAGE := WAN port renamed from eth1 to wan to match its physical \
+	label, check wan interface configuration after upgrade.
   KERNEL_LOADADDR := 0x44000000
   KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
@@ -1194,7 +1203,9 @@ define Device/cmcc_rax3000m
 	emmc-ddr3-bl31-uboot.fip emmc-ddr3-preloader.bin \
 	emmc-ddr4-bl31-uboot.fip emmc-ddr4-preloader.bin \
 	nand-ddr3-bl31-uboot.fip nand-ddr3-preloader.bin \
-	nand-ddr4-bl31-uboot.fip nand-ddr4-preloader.bin
+	nand-ddr4-bl31-uboot.fip nand-ddr4-preloader.bin \
+	ubi-ddr3-bl31-uboot.fip ubi-ddr3-preloader.bin \
+	ubi-ddr4-bl31-uboot.fip ubi-ddr4-preloader.bin
   ARTIFACT/emmc-gpt.bin := mt798x-gpt emmc
   ARTIFACT/emmc-ddr3-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-emmc-ddr3
   ARTIFACT/emmc-ddr3-preloader.bin  := mt7981-bl2 emmc-ddr3-1866
@@ -1204,6 +1215,10 @@ define Device/cmcc_rax3000m
   ARTIFACT/nand-ddr3-preloader.bin  := mt7981-bl2 spim-nand-ddr3-1866
   ARTIFACT/nand-ddr4-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-nand-ddr4
   ARTIFACT/nand-ddr4-preloader.bin  := mt7981-bl2 spim-nand-ddr4
+  ARTIFACT/ubi-ddr3-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-ubi-ddr3
+  ARTIFACT/ubi-ddr3-preloader.bin  := mt7981-bl2 spim-nand-ubi-ddr3-1866
+  ARTIFACT/ubi-ddr4-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-ubi-ddr4
+  ARTIFACT/ubi-ddr4-preloader.bin  := mt7981-bl2 spim-nand-ubi-ddr4
 endef
 TARGET_DEVICES += cmcc_rax3000m
 
@@ -2518,7 +2533,7 @@ define Device/jiorouter_ax6000-jidu6101
   DEVICE_VARIANT := JIDU6101
   DEVICE_DTS := mt7986a-jiorouter-ax6000-jidu6101
   DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7916-firmware kmod-mt7986-firmware mt7986-wo-firmware
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware
   UBINIZE_OPTS := -E 5
   UBOOTENV_IN_UBI := 1
   BLOCKSIZE := 128k
@@ -2526,6 +2541,33 @@ define Device/jiorouter_ax6000-jidu6101
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += jiorouter_ax6000-jidu6101
+
+define Device/jiorouter_ax6000-jidu6j01
+  DEVICE_VENDOR := JioRouter
+  DEVICE_MODEL := AX6000
+  DEVICE_VARIANT := JIDU6J01
+  DEVICE_ALT0_VENDOR := JioRouter
+  DEVICE_ALT0_MODEL := AX6000
+  DEVICE_ALT0_VARIANT := JIDU6201
+  DEVICE_ALT1_VENDOR := JioRouter
+  DEVICE_ALT1_MODEL := AX6000
+  DEVICE_ALT1_VARIANT := JIDU6401
+  DEVICE_ALT2_VENDOR := JioRouter
+  DEVICE_ALT2_MODEL := AX6000
+  DEVICE_ALT2_VARIANT := JIDU6601
+  DEVICE_ALT3_VENDOR := JioRouter
+  DEVICE_ALT3_MODEL := AX6000
+  DEVICE_ALT3_VARIANT := JIDU6701
+  DEVICE_DTS := mt7986a-jiorouter-ax6000-jidu6j01
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware
+  UBINIZE_OPTS := -E 5
+  UBOOTENV_IN_UBI := 1
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += jiorouter_ax6000-jidu6j01
 
 define Device/kebidumei_ax3000-u22
   DEVICE_VENDOR := Kebidumei
@@ -4412,6 +4454,24 @@ define Device/zbtlink_zbt-z8103ax-c
 endef
 TARGET_DEVICES += zbtlink_zbt-z8103ax-c
 
+define Device/zbtlink_zbt-z8105ax-c
+  DEVICE_VENDOR := Zbtlink
+  DEVICE_MODEL := ZBT-Z8105AX-C
+  SUPPORTED_DEVICES += zbtlink,z8105ax-2sim
+  DEVICE_DTS := mt7981b-zbtlink-zbt-z8105ax-c
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-serial-option
+  KERNEL_IN_UBI := 1
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 65536k
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-ubi | check-size $$(IMAGE_SIZE)
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += zbtlink_zbt-z8105ax-c
+
 define Device/zbtlink_zbt-z8106ax-s
   DEVICE_VENDOR := Zbtlink
   DEVICE_MODEL := ZBT-Z8106AX-S
@@ -4602,6 +4662,8 @@ define Device/tenbay_ms3000k
   DEVICE_DTS := mt7981b-tenbay-ms3000k
   SUPPORTED_DEVICES := tenbay,ms3000k
   DEVICE_DTS_DIR := ../dts
+  IMAGE_SIZE := 14336k
+  IMAGE/sysupgrade.bin := append-kernel | pad-to 128k | append-rootfs | pad-rootfs | check-size | append-metadata
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware uboot-envtools
 endef
 TARGET_DEVICES += tenbay_ms3000k
@@ -4617,7 +4679,7 @@ define Device/xwrt_wr3000k-emmc-nor
 		     kmod-mmc kmod-fs-f2fs kmod-fs-vfat kmod-nls-cp437 \
 		     kmod-nls-iso8859-1 mmc-utils fdisk gdisk partx-utils tune2fs uboot-envtools
   IMAGES := sysupgrade.bin
-  IMAGE_SIZE := 30464k
+  IMAGE_SIZE := 25600k
   KERNEL := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
   KERNEL_INITRAMFS := kernel-bin | lzma | \
@@ -4636,7 +4698,7 @@ define Device/tenbay_ac-2205ex
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
-  IMAGE_SIZE := 65536k
+  IMAGE_SIZE := 49152k
   KERNEL_IN_UBI := 1
   IMAGES += factory.bin
   IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
@@ -4665,7 +4727,7 @@ define Device/tenbay_ac-2210e
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
-  IMAGE_SIZE := 65536k
+  IMAGE_SIZE := 49152k
   KERNEL_IN_UBI := 1
   IMAGES += factory.bin
   IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)

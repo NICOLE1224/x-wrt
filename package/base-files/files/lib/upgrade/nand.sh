@@ -323,7 +323,13 @@ nand_upgrade_tar() {
 		kernel_mtd="$(find_mtd_index "$CI_KERNPART")"
 		kernel_length=$( ($cmd < "$tar_file" | tar xOf - "$board_dir/kernel" | wc -c) 2> /dev/null)
 		[ "$kernel_length" = 0 ] && kernel_length=
-		test -n "$CI_KERNPART_EXT" && kernel_mtd_ext="$(find_mtd_index "$CI_KERNPART_EXT")"
+		if [ -n "$CI_KERNPART_EXT" ]; then
+			kernel_mtd_ext="$(find_mtd_index "$CI_KERNPART_EXT")"
+			[ -n "$kernel_mtd_ext" ] || {
+				echo "cannot find extra kernel partition: $CI_KERNPART_EXT"
+				return 1
+			}
+		fi
 	fi
 	local rootfs_length=$( ($cmd < "$tar_file" | tar xOf - "$board_dir/root" | wc -c) 2> /dev/null)
 	[ "$rootfs_length" = 0 ] && rootfs_length=
@@ -342,9 +348,10 @@ nand_upgrade_tar() {
 			# Hence only invalidate kernel for now.
 			dd if=/dev/zero bs=4096 count=1 2> /dev/null | \
 				mtd write - "$CI_KERNPART"
-			test -n "$CI_KERNPART_EXT" && \
-			dd if=/dev/zero bs=4096 count=1 2> /dev/null | \
-				mtd write - "$CI_KERNPART_EXT"
+			if [ -n "$CI_KERNPART_EXT" ]; then
+				dd if=/dev/zero bs=4096 count=1 2> /dev/null | \
+					mtd write - "$CI_KERNPART_EXT" || return 1
+			fi
 		else
 			ubi_kernel_length="$kernel_length"
 		fi
@@ -365,15 +372,18 @@ nand_upgrade_tar() {
 				flash_erase -j "/dev/mtd${kernel_mtd}" 0 0
 				$cmd < "$tar_file" | tar xOf - "$board_dir/kernel" | \
 					nandwrite "/dev/mtd${kernel_mtd}" -
-				test -n "$CI_KERNPART_EXT" && \
-				tar xO${gz}f "$tar_file" "$board_dir/kernel" | \
-					nandwrite "/dev/mtd${kernel_mtd_ext}" -
+				if [ -n "$CI_KERNPART_EXT" ]; then
+					flash_erase -j "/dev/mtd${kernel_mtd_ext}" 0 0 || return 1
+					$cmd < "$tar_file" | tar xOf - "$board_dir/kernel" | \
+						nandwrite "/dev/mtd${kernel_mtd_ext}" - || return 1
+				fi
 			else
 				$cmd < "$tar_file" | tar xOf - "$board_dir/kernel" | \
 					mtd write - "$CI_KERNPART"
-				test -n "$CI_KERNPART_EXT" && \
-				tar xO${gz}f "$tar_file" "$board_dir/kernel" | \
-					mtd write - "$CI_KERNPART_EXT"
+				if [ -n "$CI_KERNPART_EXT" ]; then
+					$cmd < "$tar_file" | tar xOf - "$board_dir/kernel" | \
+						mtd write - "$CI_KERNPART_EXT" || return 1
+				fi
 			fi
 		else
 			local ubidev="$( nand_find_ubi "${CI_KERN_UBIPART:-$CI_UBIPART}" )"

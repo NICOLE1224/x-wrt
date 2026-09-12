@@ -450,7 +450,7 @@ endef
 
 
 define Build/fit-its
-	$(if $(findstring with-rootfs,$(1)), \
+	$(if $(filter external-with-rootfs external-static-with-rootfs,$(1)), \
 		$(call locked,dd if=$(IMAGE_ROOTFS) of=$(IMAGE_ROOTFS).pagesync bs=4096 conv=sync, \
 		  gen-cpio$(if $(TARGET_PER_DEVICE_ROOTFS),.$(ROOTFS_ID/$(DEVICE_NAME)))))
 	$(TOPDIR)/scripts/mkits.sh \
@@ -460,8 +460,8 @@ define Build/fit-its
 			$(if $(findstring 11,$(if $(DEVICE_DTS_OVERLAY),1)$(if $(findstring $(KERNEL_BUILD_DIR)/image-,$(dtb)),,1)), \
 				-d $(KERNEL_BUILD_DIR)/image-$$(basename $(dtb)), \
 				-d $(dtb))) \
-		$(if $(findstring with-rootfs,$(1)),-r $(IMAGE_ROOTFS)) \
-		$(if $(findstring with-initrd,$(1)), \
+		$(if $(filter external-with-rootfs external-static-with-rootfs,$(1)),-r $(IMAGE_ROOTFS)) \
+		$(if $(filter with-initrd,$(1)), \
 			$(if $(CONFIG_TARGET_ROOTFS_INITRAMFS_SEPARATE), \
 				-i $(KERNEL_BUILD_DIR)/initrd$(if $(TARGET_PER_DEVICE_ROOTFS),.$(ROOTFS_ID/$(DEVICE_NAME))).cpio$(strip $(call Build/initrd_compression)))) \
 		-a $(KERNEL_LOADADDR) -e $(if $(KERNEL_ENTRY),$(KERNEL_ENTRY),$(KERNEL_LOADADDR)) \
@@ -474,8 +474,8 @@ define Build/fit-its
 endef
 
 define Build/fit-image
-	$(call locked,PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage $(if $(findstring external,$(1)),\
-		-E -B 0x1000 $(if $(findstring static,$(1)),-p 0x1000)) -f $@.its $@.new, \
+	$(call locked,PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage $(if $(filter external-with-rootfs external-static-with-rootfs,$(1)),\
+		-E -B 0x1000 $(if $(filter external-static-with-rootfs,$(1)),-p 0x1000)) -f $@.its $@.new, \
 	  gen-cpio$(if $(TARGET_PER_DEVICE_ROOTFS),.$(ROOTFS_ID/$(DEVICE_NAME))))
 	@mv $@.new $@
 endef
@@ -716,7 +716,7 @@ endef
 # E.g. | qemu-image vdi <optional extra arguments to qemu-img binary>
 define Build/qemu-image
 	if command -v qemu-img; then \
-		qemu-img convert -f raw -O $1 $@ $@.new; \
+		qemu-img convert -f raw -O $1 $@ $@.new && \
 		mv $@.new $@; \
 	else \
 		echo "WARNING: Install qemu-img to create VDI/VMDK images" >&2; exit 1; \

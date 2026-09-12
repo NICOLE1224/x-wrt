@@ -144,7 +144,7 @@ define Device/domywifi_dw33d-nor
   IMAGE/sysupgrade.bin := append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs | \
 			  append-metadata | check-size
   IMAGE/breed-factory.bin := append-rootfs-64k | append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs | \
-			     pad-to 14528k | append-okli-kernel $(1)
+			     pad-to 14528k | append-okli-kernel $(1) | check-size 16000k
 endef
 TARGET_DEVICES += domywifi_dw33d-nor
 

@@ -32,7 +32,10 @@ platform_copy_config() {
 	local board=$(board_name)
 	case "$board" in
 	xwrt,wr1800k-ax-norplusemmc)
-		norplusemmc_copy_config
+		norplusemmc_copy_config || {
+			echo "Failed to save NOR/eMMC upgrade configuration" >&2
+			exit 1
+		}
 	esac
 }
 
@@ -217,6 +220,7 @@ platform_do_upgrade() {
 		[ "$(fw_printenv -n bootmenu_delay)" != "0" ] || \
 			fw_setenv bootmenu_delay 3
 		iodata_mstc_set_flag "bootnum" "persist" "0x4" "1,2" "1"
+		nand_do_upgrade "$1"
 		;;
 	xiaomi,mi-router-3g|\
 	xiaomi,mi-router-3-pro|\
@@ -262,7 +266,10 @@ platform_do_upgrade() {
 		platform_upgrade_ubnt_erx "$1"
 		;;
 	xwrt,wr1800k-ax-norplusemmc)
-		norplusemmc_do_upgrade "$1"
+		norplusemmc_do_upgrade "$1" || {
+			echo "NOR/eMMC upgrade failed" >&2
+			exit 1
+		}
 		;;
 	zyxel,lte3301-plus|\
 	zyxel,lte5398-m904|\

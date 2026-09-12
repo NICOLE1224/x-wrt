@@ -330,6 +330,7 @@ define Build/initrd-kernel
 
 	$(CP) $(TARGET_DIR)/lib/ld* $@.initrd/lib/
 	( \
+		set -o pipefail; \
 		FLAG_FILE="$@.initrd/.new"; \
 		touch "$$FLAG_FILE"; \
 		while [ -f "$$FLAG_FILE" ]; do \
@@ -349,14 +350,18 @@ define Build/initrd-kernel
 					TARGET_PATH="$@.initrd/lib"; \
 				fi; \
 				if [ ! -f "$$TARGET_PATH/$$DEPS" ]; then \
-					touch "$$FLAG_FILE"; \
 					for src in "$${SRC_PATHS[@]}"; do \
 						if [ -f "$$src/$$DEPS" ]; then \
-							cp "$$src/$$DEPS" "$$TARGET_PATH/$$DEPS"; \
+							cp "$$src/$$DEPS" "$$TARGET_PATH/$$DEPS" || exit 1; \
 						fi; \
 					done; \
+					[ -f "$$TARGET_PATH/$$DEPS" ] || { \
+						echo "Missing initrd dependency: $$DEPS" >&2; \
+						exit 1; \
+					}; \
+					touch "$$FLAG_FILE"; \
 				fi; \
-			done; \
+			done || exit 1; \
 		done; \
 		rm -f "$$FLAG_FILE"; \
 	)
@@ -400,15 +405,20 @@ endef
 define Build/tenbay-factory
   $(eval model=$(word 1,$(1)))
   $(eval magic=$(word 2,$(1)))
-  mkdir -p "$@.tmp"
-  mv "$@" "$@.tmp/UploadBrush-bin.img"
-  $(MKHASH) md5 "$@.tmp/UploadBrush-bin.img" | head -c32 > "$@.tmp/check_MD5.txt"
-  echo -n $$(cat "$@.tmp/check_MD5.txt" | head -c32)$$(echo -n $(magic)$(model) | $(MKHASH) md5 | head -c32) | $(MKHASH) md5 | head -c32 >"$@.tmp/bin_random_oem.txt"
-  echo -n V9.9-222222222222 >"$@.tmp/version.txt"
-  $(TAR) -czf "$@.tmp.tgz" -C "$@.tmp" UploadBrush-bin.img check_MD5.txt bin_random_oem.txt version.txt
-  $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -e -salt -in "$@.tmp.tgz" -out "$@" -k QiLunSmartWL
-  printf %32s $(model) >> "$@"
-  rm -rf "$@.tmp" "$@.tmp.tgz"
+  { \
+    mkdir -p "$@.tmp" && \
+    mv "$@" "$@.tmp/UploadBrush-bin.img" && \
+    binmd5=$$($(MKHASH) md5 "$@.tmp/UploadBrush-bin.img") && \
+    oemmd5=$$(printf '%s' '$(magic)$(model)' | $(MKHASH) md5) && \
+    authmd5=$$(printf '%s' "$${binmd5}$${oemmd5}" | $(MKHASH) md5) && \
+    printf '%s' "$$binmd5" >"$@.tmp/check_MD5.txt" && \
+    printf '%s' "$$authmd5" >"$@.tmp/bin_random_oem.txt" && \
+    printf '%s' V9.9-222222222222 >"$@.tmp/version.txt" && \
+    $(TAR) -czf "$@.tmp.tgz" -C "$@.tmp" UploadBrush-bin.img check_MD5.txt bin_random_oem.txt version.txt && \
+    $(STAGING_DIR_HOST)/bin/openssl aes-256-cbc -e -salt -in "$@.tmp.tgz" -out "$@" -k QiLunSmartWL && \
+    printf %32s '$(model)' >>"$@" && \
+    rm -rf "$@.tmp" "$@.tmp.tgz"; \
+  } || { rm -f "$@"; exit 1; }
 endef
 
 define Device/adslr_g7
@@ -1352,7 +1362,7 @@ define Device/dual-q_h721
   IMAGE_SIZE := 16064k
   DEVICE_VENDOR := Dual-Q
   DEVICE_MODEL := H721
-  DEVICE_PACKAGES := kmod-ata-ahci kmod-sdhci-mt7620 kmod-usb3 lte-modem-dual-q-h721
+  DEVICE_PACKAGES := kmod-ata-ahci kmod-sdhci-mt7620 kmod-usb3
 endef
 TARGET_DEVICES += dual-q_h721
 
