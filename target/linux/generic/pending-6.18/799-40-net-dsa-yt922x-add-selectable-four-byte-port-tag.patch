@@ -144,7 +144,7 @@ new file mode 100644
 index 0000000..8d9f7d6
 --- /dev/null
 +++ b/include/linux/dsa/yt922x.h
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,31 @@
 +/* SPDX-License-Identifier: GPL-2.0-or-later */
 +#ifndef _LINUX_DSA_YT922X_H
 +#define _LINUX_DSA_YT922X_H
@@ -162,12 +162,17 @@ index 0000000..8d9f7d6
 +#define YT922X_4B_RX_PORT_M	GENMASK(7, 4)
 +
 +/* Return the full CPU tag control word, including bits above the VLAN VID. */
-+static inline u16 dsa_tag_yt922x_4b_standalone_vid(const struct dsa_port *dp)
++static inline u16 dsa_tag_yt922x_4b_port(unsigned int port)
 +{
-+	if (dp->index > 8)
++	if (port > 8)
 +		return 0;
 +
-+	return FIELD_PREP(YT922X_4B_TX_PORT_M, BIT(dp->index));
++	return FIELD_PREP(YT922X_4B_TX_PORT_M, BIT(port));
++}
++
++static inline u16 dsa_tag_yt922x_4b_standalone_vid(const struct dsa_port *dp)
++{
++	return dsa_tag_yt922x_4b_port(dp->index);
 +}
 +
 +#endif

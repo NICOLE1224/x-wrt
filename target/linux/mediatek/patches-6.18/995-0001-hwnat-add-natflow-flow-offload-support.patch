@@ -1506,7 +1506,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return 0;
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-@@ -0,0 +1,810 @@
+@@ -0,0 +1,821 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + *  Copyright (C) 2020 Felix Fietkau <nbd@nbd.name>
@@ -1523,8 +1523,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +#include <net/flow_offload.h>
 +#include <net/pkt_cls.h>
 +#include <net/dsa.h>
-+#include <linux/log2.h>
 +#include <linux/dsa/8021q.h>
++#if IS_ENABLED(CONFIG_NET_DSA_TAG_YT922X)
++#include <linux/dsa/yt922x.h>
++#endif
 +#include "mtk_eth_soc.h"
 +#ifdef CONFIG_NET_MEDIATEK_SOC_WED
 +#include "mtk_wed.h"
@@ -1753,6 +1755,17 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	return MTK_QDMA_TX_NUM - 1;
 +}
 +
++static bool mtk_offload_dsa_uses_vlan(enum dsa_tag_protocol proto)
++{
++	if (proto == DSA_TAG_PROTO_MXL862_8021Q)
++		return true;
++#if IS_ENABLED(CONFIG_NET_DSA_TAG_YT922X)
++	if (proto == DSA_TAG_PROTO_YT922X_4B)
++		return true;
++#endif
++	return false;
++}
++
 +/* Decode against the conduit's actual tag protocol, not packed VID bits. */
 +static int
 +mtk_offload_get_dsa_info(flow_offload_hw_path_t *dest, u16 *port, u16 *vid,
@@ -1785,13 +1798,13 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			*vid = 0xc00 | ((*port >> 5) & 0x3ff);
 +			*port &= 0x1f;
 +			return 0;
++#if IS_ENABLED(CONFIG_NET_DSA_TAG_YT922X)
 +		case DSA_TAG_PROTO_YT922X_4B:
-+			*vid = *port;
-+			/* TX tag bits 13:5 select exactly one physical port. */
-+			if (!is_power_of_2(*vid) || (*vid & ~GENMASK(13, 5)))
++			if (*port > 8)
 +				return -EINVAL;
-+			*port = __ffs(*vid) - 5;
++			*vid = dsa_tag_yt922x_4b_port(*port);
 +			return 0;
++#endif
 +		case DSA_TAG_PROTO_MTK:
 +			return *port < MTK_DSA_USER_PORT_MAX ? 0 : -EINVAL;
 +		default:
@@ -1904,8 +1917,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				mtk_foe_entry_set_queue(eth, entry, mac->dsa_queue_base + mac->dsa_port_rank[dsa_port]);
 +			}
 +		}
-+		if (dsa_proto == DSA_TAG_PROTO_MXL862_8021Q ||
-+		    dsa_proto == DSA_TAG_PROTO_YT922X_4B)
++		if (mtk_offload_dsa_uses_vlan(dsa_proto))
 +			mtk_foe_entry_set_vlan(eth, entry, dsa_vid);
 +		else if (dsa_proto == DSA_TAG_PROTO_MTK)
 +			mtk_foe_entry_set_dsa(eth, entry, dsa_port);
@@ -2036,8 +2048,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				mtk_foe_entry_set_queue(eth, entry, mac->dsa_queue_base + mac->dsa_port_rank[dsa_port]);
 +			}
 +		}
-+		if (dsa_proto == DSA_TAG_PROTO_MXL862_8021Q ||
-+		    dsa_proto == DSA_TAG_PROTO_YT922X_4B)
++		if (mtk_offload_dsa_uses_vlan(dsa_proto))
 +			mtk_foe_entry_set_vlan(eth, entry, dsa_vid);
 +		else if (dsa_proto == DSA_TAG_PROTO_MTK)
 +			mtk_foe_entry_set_dsa(eth, entry, dsa_port);
@@ -2776,17 +2787,16 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
   */
 --- a/net/dsa/user.c
 +++ b/net/dsa/user.c
-@@ -22,6 +22,9 @@
+@@ -22,6 +22,8 @@
  #include <net/dcbnl.h>
  #include <linux/netpoll.h>
  #include <linux/string.h>
 +#include <linux/dsa/8021q.h>
-+#include <linux/dsa/yt922x.h>
 +#include <net/netfilter/nf_flow_table.h>
  
  #include "conduit.h"
  #include "dsa.h"
-@@ -2585,6 +2588,49 @@ static int dsa_user_hwtstamp_set(struct
+@@ -2585,6 +2587,49 @@ static int dsa_user_hwtstamp_set(struct
  	return ds->ops->port_hwtstamp_set(ds, dp->index, cfg, extack);
  }
  
@@ -2794,7 +2804,6 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +{
 +	struct net_device *dev = path->dev;
 +	struct dsa_port *dp;
-+	u16 dsa_tag;
 +
 +	if (!(path->flags & FLOW_OFFLOAD_PATH_ETHERNET))
 +		return -EINVAL;
@@ -2809,13 +2818,14 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		path->dsa_port = ((dsa_tag_8021q_standalone_vid(dp) & 0x3ff) << 5) |
 +				 dp->index;
 +		break;
++#if IS_ENABLED(CONFIG_NET_DSA_TAG_YT922X)
 +	case DSA_TAG_PROTO_YT922X_4B:
-+		dsa_tag = dsa_tag_yt922x_4b_standalone_vid(dp);
 +		/* The software tagger supplies access-port PVIDs. */
-+		if (dsa_port_is_vlan_filtering(dp) || !dsa_tag)
++		if (dsa_port_is_vlan_filtering(dp) || dp->index > 8)
 +			return -EOPNOTSUPP;
-+		path->dsa_port = dsa_tag;
++		path->dsa_port = dp->index;
 +		break;
++#endif
 +	case DSA_TAG_PROTO_MTK:
 +		if (dp->index >= 32)
 +			return -EOPNOTSUPP;

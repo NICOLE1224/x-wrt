@@ -205,7 +205,14 @@ define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 ifeq ($(UBOOT_IMAGE),u-boot.fip)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/bl2.fip $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.fip
+	# Legacy fip layout bundles BL2 + BL31 + U-Boot into u-boot.fip, so
+	# expose it as *-bl2-bl31-u-boot.fip; the split layout only carries
+	# BL31 + U-Boot and stays as *-bl31-u-boot.fip.
+ifeq ($(FIP_LEGACY),1)
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/u-boot.fip $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2-bl31-u-boot.fip
+else
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/u-boot.fip $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl31-u-boot.fip
+endif
 else
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/u-boot.bin$(if $(LZMA_COMPRESS),.lzma) \
 		$(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-u-boot.bin$(if $(LZMA_COMPRESS),.lzma)
