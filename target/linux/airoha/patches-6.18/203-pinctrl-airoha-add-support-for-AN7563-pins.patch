@@ -11,7 +11,7 @@ the ARM64 dependency in the old MediaTek Kconfig is no longer needed.
 ---
 --- a/drivers/pinctrl/airoha/Kconfig
 +++ b/drivers/pinctrl/airoha/Kconfig
-@@ -13,12 +13,21 @@
+@@ -13,6 +13,7 @@ config PINCTRL_AIROHA
  	select GPIOLIB
  	select GPIOLIB_IRQCHIP
  	select REGMAP_MMIO
@@ -19,10 +19,10 @@ the ARM64 dependency in the old MediaTek Kconfig is no longer needed.
  	imply PINCTRL_AIROHA_AN7581
  	imply PINCTRL_AIROHA_AN7583
  	imply PINCTRL_AIROHA_EN7523
- 	help
+@@ -20,6 +21,14 @@ config PINCTRL_AIROHA
  	  Shared pin controller and gpio driver code for different
  	  Airoha SoCs.
-+
+ 
 +config PINCTRL_AIROHA_AN7563
 +	tristate "AN7563 pinctrl"
 +	depends on ARM || COMPILE_TEST
@@ -30,9 +30,10 @@ the ARM64 dependency in the old MediaTek Kconfig is no longer needed.
 +	help
 +	  Say yes here to support pin controller and gpio driver
 +	  on Airoha AN7563 and AN7552 SoCs running in AArch32 mode.
- 
++
  config PINCTRL_AIROHA_AN7581
  	tristate "AN7581 pinctrl"
+ 	depends on ARM64 || COMPILE_TEST
 --- a/drivers/pinctrl/airoha/Makefile
 +++ b/drivers/pinctrl/airoha/Makefile
 @@ -4,6 +4,7 @@

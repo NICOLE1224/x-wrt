@@ -28,7 +28,7 @@ Signed-off-by: Gleb Pesin <dormancygrace@gmail.com>
 
 --- a/include/net/dsa.h
 +++ b/include/net/dsa.h
-@@ -57,6 +57,7 @@ struct tc_action;
+@@ -60,6 +60,7 @@ struct tc_action;
  #define DSA_TAG_PROTO_YT921X_VALUE		33
  #define DSA_TAG_PROTO_YT922X_VALUE		34
  #define DSA_TAG_PROTO_YT922X_4B_VALUE		35
@@ -36,7 +36,7 @@ Signed-off-by: Gleb Pesin <dormancygrace@gmail.com>
  
  enum dsa_tag_protocol {
  	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
-@@ -91,6 +92,7 @@ enum dsa_tag_protocol {
+@@ -97,6 +98,7 @@ enum dsa_tag_protocol {
  	DSA_TAG_PROTO_YT921X		= DSA_TAG_PROTO_YT921X_VALUE,
  	DSA_TAG_PROTO_YT922X		= DSA_TAG_PROTO_YT922X_VALUE,
  	DSA_TAG_PROTO_YT922X_4B		= DSA_TAG_PROTO_YT922X_4B_VALUE,

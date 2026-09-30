@@ -10,11 +10,9 @@ Register the PCS through the managed firmware provider API.
 
 Signed-off-by: X-WRT <dev@x-wrt.com>
 ---
-diff --git a/drivers/net/pcs/airoha/Kconfig b/drivers/net/pcs/airoha/Kconfig
-index 0214ba7..539e607 100644
 --- a/drivers/net/pcs/airoha/Kconfig
 +++ b/drivers/net/pcs/airoha/Kconfig
-@@ -17,3 +17,14 @@ config PCS_AIROHA_AN7583
+@@ -18,3 +18,14 @@ config PCS_AIROHA_AN7583
  	help
  	  This module provides helper to phylink for managing the Airoha
  	  AN7583 PCS for SoC Ethernet and PON SERDES.
@@ -29,8 +27,6 @@ index 0214ba7..539e607 100644
 +	  2500BASE-X mode. This analog block differs from the AN7581 PCS.
 +	  The driver configures the 25 MHz SerDes reference clock and
 +	  exposes the PCS to phylink for the copper WAN interface.
-diff --git a/drivers/net/pcs/airoha/Makefile b/drivers/net/pcs/airoha/Makefile
-index 69b8b0a..60a21fd 100644
 --- a/drivers/net/pcs/airoha/Makefile
 +++ b/drivers/net/pcs/airoha/Makefile
 @@ -8,3 +8,4 @@ endif
@@ -38,9 +34,6 @@ index 69b8b0a..60a21fd 100644
  pcs-airoha-objs			+= pcs-an7583.o
  endif
 +obj-$(CONFIG_PCS_AIROHA_AN7563) += pcs-an7563.o
-diff --git b/drivers/net/pcs/airoha/pcs-an7563.c b/drivers/net/pcs/airoha/pcs-an7563.c
-new file mode 100644
-index 0000000..a45f7ee
 --- /dev/null
 +++ b/drivers/net/pcs/airoha/pcs-an7563.c
 @@ -0,0 +1,452 @@

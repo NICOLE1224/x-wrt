@@ -28,7 +28,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 
 --- a/drivers/net/dsa/Kconfig
 +++ b/drivers/net/dsa/Kconfig
-@@ -165,4 +165,11 @@ config NET_DSA_VITESSE_VSC73XX_PLATFORM
+@@ -156,4 +156,11 @@ config NET_DSA_VITESSE_VSC73XX_PLATFORM
  	  This enables support for the Vitesse VSC7385, VSC7388, VSC7395
  	  and VSC7398 SparX integrated ethernet switches, connected over
  	  a CPU-attached address bus and work in memory-mapped I/O mode.
@@ -42,7 +42,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  endmenu
 --- a/drivers/net/dsa/Makefile
 +++ b/drivers/net/dsa/Makefile
-@@ -15,6 +15,7 @@ obj-$(CONFIG_NET_DSA_SMSC_LAN9303_MDIO)
+@@ -14,6 +14,7 @@ obj-$(CONFIG_NET_DSA_SMSC_LAN9303_MDIO)
  obj-$(CONFIG_NET_DSA_VITESSE_VSC73XX) += vitesse-vsc73xx-core.o
  obj-$(CONFIG_NET_DSA_VITESSE_VSC73XX_PLATFORM) += vitesse-vsc73xx-platform.o
  obj-$(CONFIG_NET_DSA_VITESSE_VSC73XX_SPI) += vitesse-vsc73xx-spi.o

@@ -23,7 +23,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
 
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2364,10 +2364,16 @@ static struct sk_buff *airoha_qdma_build_rx_skb(struct airoha_queue *q,
+@@ -2371,10 +2371,16 @@ static struct sk_buff *airoha_qdma_build
  		u32 desc_ctrl = le32_to_cpu(READ_ONCE(desc->ctrl));
  		u32 len = FIELD_GET(QDMA_DESC_LEN_MASK, desc_ctrl);
  
@@ -41,5 +41,3 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		__skb_put(skb, len);
  		if ((netdev->features & NETIF_F_RXCSUM) &&
  		    airoha_qdma_rx_checksum_ok(q->qdma->eth, desc))
--- 
-2.51.0

@@ -32,7 +32,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  #define PHY_ID_YT8531		0x4f51e91b
  #define PHY_ID_YT8531S		0x4f51e91a
  #define PHY_ID_YT8821		0x4f51ea19
-@@ -232,6 +233,13 @@
+@@ -233,6 +234,13 @@
  #define YTPHY_MCR_FIBER_1000BX			(0x1 << 0)
  #define YTPHY_MCR_FIBER_100FX			(0x0 << 0)
  
@@ -46,7 +46,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  /* WOL MAC ADDR: MACADDR2(highest), MACADDR1(middle), MACADDR0(lowest) */
  #define YTPHY_WOL_MACADDR2_REG			0xA007
  #define YTPHY_WOL_MACADDR1_REG			0xA008
-@@ -1846,6 +1854,36 @@ static int yt8531_config_init(struct phy
+@@ -1843,6 +1851,36 @@ static int yt8531_config_init(struct phy
  	return 0;
  }
  
@@ -83,7 +83,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  /**
   * yt8531_link_change_notify() - Adjust the tx clock direction according to
   * the current speed and dts config.
-@@ -3073,6 +3111,14 @@ static struct phy_driver motorcomm_phy_d
+@@ -3053,6 +3091,14 @@ static struct phy_driver motorcomm_phy_d
  		.led_hw_control_get = yt8521_led_hw_control_get,
  	},
  	{
@@ -98,7 +98,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  		PHY_ID_MATCH_EXACT(PHY_ID_YT8531),
  		.name		= "YT8531 Gigabit Ethernet",
  		.probe		= yt8531_probe,
-@@ -3132,6 +3178,7 @@ MODULE_LICENSE("GPL");
+@@ -3112,6 +3158,7 @@ MODULE_LICENSE("GPL");
  static const struct mdio_device_id __maybe_unused motorcomm_tbl[] = {
  	{ PHY_ID_MATCH_EXACT(PHY_ID_YT8511) },
  	{ PHY_ID_MATCH_EXACT(PHY_ID_YT8521) },

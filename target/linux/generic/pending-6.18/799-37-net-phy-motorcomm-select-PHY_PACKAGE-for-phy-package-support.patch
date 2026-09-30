@@ -18,7 +18,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 
 --- a/drivers/net/phy/Kconfig
 +++ b/drivers/net/phy/Kconfig
-@@ -423,6 +423,7 @@ config MICROSEMI_PHY
+@@ -340,6 +340,7 @@ config MICROSEMI_PHY
  
  config MOTORCOMM_PHY
  	tristate "Motorcomm PHYs"

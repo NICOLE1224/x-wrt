@@ -12,7 +12,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 
 --- a/tools/perf/util/hist.h
 +++ b/tools/perf/util/hist.h
-@@ -748,16 +748,14 @@
+@@ -748,16 +748,14 @@ int evlist__tui_browse_hists(struct evli
  static inline int __hist_entry__tui_annotate(struct hist_entry *he __maybe_unused,
  					     struct map_symbol *ms __maybe_unused,
  					     struct evsel *evsel __maybe_unused,

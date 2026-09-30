@@ -20,7 +20,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 
 --- a/drivers/net/phy/motorcomm.c
 +++ b/drivers/net/phy/motorcomm.c
-@@ -1069,6 +1069,7 @@ static int yt8521_probe(struct phy_devic
+@@ -1066,6 +1066,7 @@ static int yt8521_probe(struct phy_devic
  {
  	struct device *dev = &phydev->mdio.dev;
  	struct yt8521_priv *priv;
@@ -28,7 +28,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  	int chip_config;
  	u16 mask, val;
  	u32 freq;
-@@ -1080,6 +1081,11 @@ static int yt8521_probe(struct phy_devic
+@@ -1077,6 +1078,11 @@ static int yt8521_probe(struct phy_devic
  
  	phydev->priv = priv;
  

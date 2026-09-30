@@ -14,7 +14,7 @@ allocator when indexes 1-63 are all occupied.
 
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -10720,11 +10720,16 @@ static int dev_index_reserve(struct net
+@@ -10727,11 +10727,16 @@ static int dev_index_reserve(struct net
  		return -EINVAL;
  	}
  

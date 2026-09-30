@@ -8,9 +8,6 @@ debugfs state for rings, interrupts, and hardware counters.
 
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
-diff --git b/drivers/net/ethernet/airoha/airoha_wed.c b/drivers/net/ethernet/airoha/airoha_wed.c
-new file mode 100644
-index 0000000..009c80f
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_wed.c
 @@ -0,0 +1,1682 @@
@@ -1696,9 +1693,6 @@ index 0000000..009c80f
 +	}
 +	mutex_unlock(&hw_lock);
 +}
-diff --git b/drivers/net/ethernet/airoha/airoha_wed_debugfs.c b/drivers/net/ethernet/airoha/airoha_wed_debugfs.c
-new file mode 100644
-index 0000000..be59863
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_wed_debugfs.c
 @@ -0,0 +1,156 @@

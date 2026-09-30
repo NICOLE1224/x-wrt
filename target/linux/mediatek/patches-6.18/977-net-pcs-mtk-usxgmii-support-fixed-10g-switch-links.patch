@@ -11,7 +11,7 @@ Based on the YT9224 adaptation by JiaY-shi <shi05275@163.com>.
 ---
 --- a/drivers/net/pcs/pcs-mtk-usxgmii.c
 +++ b/drivers/net/pcs/pcs-mtk-usxgmii.c
-@@ -162,7 +162,12 @@
+@@ -162,7 +162,12 @@ static int mtk_usxgmii_pcs_config(struct
  	int ret;
  
  	if (interface == PHY_INTERFACE_MODE_USXGMII) {
@@ -25,7 +25,7 @@ Based on the YT9224 adaptation by JiaY-shi <shi05275@163.com>.
  		link_timer = FIELD_PREP(USXGMII_LINK_TIMER_IDLE_DETECT, 0x7B) |
  			     FIELD_PREP(USXGMII_LINK_TIMER_COMP_ACK_DETECT, 0x7B) |
  			     FIELD_PREP(USXGMII_LINK_TIMER_AN_RESTART, 0x7B);
-@@ -360,7 +365,9 @@
+@@ -360,7 +365,9 @@ static void mtk_usxgmii_pcs_link_up(stru
  {
  	struct mtk_usxgmii_pcs *mpcs = pcs_to_mtk_usxgmii_pcs(pcs);
  

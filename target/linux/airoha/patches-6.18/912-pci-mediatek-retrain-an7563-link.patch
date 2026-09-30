@@ -62,7 +62,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  static int mtk_pcie_probe(struct platform_device *pdev)
  {
  	struct device *dev = &pdev->dev;
-@@ -1154,6 +1189,9 @@ static int mtk_pcie_probe(struct platform
+@@ -1154,6 +1189,9 @@ static int mtk_pcie_probe(struct platfor
  	if (err)
  		goto put_resources;
  
@@ -74,7 +74,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  put_resources:
 --- a/drivers/pci/pci.c
 +++ b/drivers/pci/pci.c
-@@ -4550,6 +4550,7 @@
+@@ -4550,6 +4550,7 @@ int pcie_retrain_link(struct pci_dev *pd
  
  	return rc;
  }

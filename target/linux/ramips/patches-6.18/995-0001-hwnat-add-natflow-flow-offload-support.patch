@@ -295,7 +295,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	}
  
  	/* set interrupt delays based on current Net DIM sample */
-@@ -5121,6 +5189,56 @@ static netdev_features_t mtk_features_ch
+@@ -5122,6 +5190,56 @@ static netdev_features_t mtk_features_ch
  }
  #endif
  
@@ -352,7 +352,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct ethtool_ops mtk_ethtool_ops = {
  	.get_link_ksettings	= mtk_get_link_ksettings,
  	.set_link_ksettings	= mtk_set_link_ksettings,
-@@ -5156,7 +5274,8 @@ static const struct net_device_ops mtk_n
+@@ -5157,7 +5275,8 @@ static const struct net_device_ops mtk_n
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mtk_poll_controller,
  #endif
@@ -362,7 +362,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	.ndo_bpf		= mtk_xdp,
  	.ndo_xdp_xmit		= mtk_xdp_xmit,
  	.ndo_select_queue	= mtk_select_queue,
-@@ -5814,7 +5933,8 @@ static int mtk_probe(struct platform_dev
+@@ -5827,7 +5946,8 @@ static int mtk_probe(struct platform_dev
  err_unreg_netdev:
  	mtk_unreg_dev(eth);
  err_deinit_ppe:
@@ -372,7 +372,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	mtk_mdio_cleanup(eth);
  err_free_dev:
  	mtk_free_dev(eth);
-@@ -5834,6 +5954,8 @@ static void mtk_remove(struct platform_d
+@@ -5847,6 +5967,8 @@ static void mtk_remove(struct platform_d
  	struct mtk_mac *mac;
  	int i;
  
@@ -427,7 +427,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct mtk_rx_dma {
  	unsigned int rxd1;
  	unsigned int rxd2;
-@@ -1177,6 +1191,7 @@ struct mtk_tx_dma_desc_info {
+@@ -1179,6 +1193,7 @@ struct mtk_tx_dma_desc_info {
  	u8		vlan:1;
  	u8		first:1;
  	u8		last:1;
@@ -435,7 +435,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  };
  
  struct mtk_reg_map {
-@@ -1386,7 +1401,7 @@ struct mtk_eth {
+@@ -1388,7 +1403,7 @@ struct mtk_eth {
  	struct metadata_dst		*dsa_meta[MTK_MAX_DSA_PORTS];
  
  	struct mtk_ppe			*ppe[3];
@@ -444,7 +444,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	struct bpf_prog			__rcu *prog;
  
-@@ -1559,6 +1574,14 @@ static inline bool mtk_interface_mode_is
+@@ -1561,6 +1576,14 @@ static inline bool mtk_interface_mode_is
  	}
  }
  
@@ -459,7 +459,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  /* read the hardware status register */
  void mtk_stats_update_mac(struct mtk_mac *mac);
  
-@@ -1572,6 +1595,16 @@ int mtk_gmac_gephy_path_setup(struct mtk
+@@ -1574,6 +1597,16 @@ int mtk_gmac_gephy_path_setup(struct mtk
  int mtk_gmac_rgmii_path_setup(struct mtk_eth *eth, int mac_id);
  int mtk_gmac_usxgmii_path_setup(struct mtk_eth *eth, int mac_id);
  
@@ -476,7 +476,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int mtk_eth_offload_init(struct mtk_eth *eth, u8 id);
  int mtk_eth_setup_tc(struct net_device *dev, enum tc_setup_type type,
  		     void *type_data);
-@@ -1579,6 +1612,7 @@ int mtk_flow_offload_cmd(struct mtk_eth
+@@ -1581,6 +1614,7 @@ int mtk_flow_offload_cmd(struct mtk_eth
  			 int ppe_index);
  void mtk_flow_offload_cleanup(struct mtk_eth *eth, struct list_head *list);
  void mtk_eth_set_dma_device(struct mtk_eth *eth, struct device *dma_dev);
@@ -2569,7 +2569,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  /* Backlog congestion levels */
  #define NET_RX_SUCCESS		0	/* keep 'em coming, baby */
  #define NET_RX_DROP		1	/* packet dropped */
-@@ -1609,6 +1628,11 @@ struct net_device_ops {
+@@ -1611,6 +1630,11 @@ struct net_device_ops {
  	int			(*ndo_bridge_dellink)(struct net_device *dev,
  						      struct nlmsghdr *nlh,
  						      u16 flags);
@@ -2593,7 +2593,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -187,6 +187,63 @@ struct flow_offload {
+@@ -188,6 +188,63 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
  };
  
@@ -2667,7 +2667,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #include "vlan.h"
  #include "vlanproc.h"
-@@ -1000,6 +1001,23 @@ static const struct macsec_ops macsec_of
+@@ -976,6 +977,23 @@ static const struct macsec_ops macsec_of
  
  #endif
  
@@ -2691,7 +2691,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct ethtool_ops vlan_ethtool_ops = {
  	.get_link_ksettings	= vlan_ethtool_get_link_ksettings,
  	.get_drvinfo	        = vlan_ethtool_get_drvinfo,
-@@ -1039,6 +1057,7 @@ static const struct net_device_ops vlan_
+@@ -1015,6 +1033,7 @@ static const struct net_device_ops vlan_
  	.ndo_fix_features	= vlan_dev_fix_features,
  	.ndo_get_iflink		= vlan_dev_get_iflink,
  	.ndo_fill_forward_path	= vlan_dev_fill_forward_path,
@@ -2770,7 +2770,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #include "conduit.h"
  #include "dsa.h"
-@@ -2585,6 +2587,49 @@ static int dsa_user_hwtstamp_set(struct
+@@ -2601,6 +2603,49 @@ static int dsa_user_hwtstamp_set(struct
  	return ds->ops->port_hwtstamp_set(ds, dp->index, cfg, extack);
  }
  
@@ -2820,7 +2820,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct net_device_ops dsa_user_netdev_ops = {
  	.ndo_open		= dsa_user_open,
  	.ndo_stop		= dsa_user_close,
-@@ -2606,6 +2652,7 @@ static const struct net_device_ops dsa_u
+@@ -2622,6 +2667,7 @@ static const struct net_device_ops dsa_u
  	.ndo_vlan_rx_kill_vid	= dsa_user_vlan_rx_kill_vid,
  	.ndo_change_mtu		= dsa_user_change_mtu,
  	.ndo_fill_forward_path	= dsa_user_fill_forward_path,

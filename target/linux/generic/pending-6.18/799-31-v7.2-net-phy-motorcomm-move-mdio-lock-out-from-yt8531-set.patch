@@ -24,7 +24,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 
 --- a/drivers/net/phy/motorcomm.c
 +++ b/drivers/net/phy/motorcomm.c
-@@ -978,7 +978,8 @@ static u32 yt8531_get_ldo_vol(struct phy
+@@ -975,7 +975,8 @@ static u32 yt8531_get_ldo_vol(struct phy
  {
  	u32 val;
  
@@ -34,7 +34,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  	val = FIELD_GET(YT8531_RGMII_LDO_VOL_MASK, val);
  
  	return val <= YT8531_LDO_VOL_1V8 ? val : YT8531_LDO_VOL_1V8;
-@@ -1014,10 +1015,11 @@ static int yt8531_set_ds(struct phy_devi
+@@ -1011,10 +1012,11 @@ static int yt8531_set_ds(struct phy_devi
  		ds = YT8531_RGMII_RX_DS_DEFAULT;
  	}
  
@@ -50,7 +50,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  	if (ret < 0)
  		return ret;
  
-@@ -1037,10 +1039,11 @@ static int yt8531_set_ds(struct phy_devi
+@@ -1034,10 +1036,11 @@ static int yt8531_set_ds(struct phy_devi
  	ds_field_low = FIELD_GET(GENMASK(1, 0), ds);
  	ds_field_low = FIELD_PREP(YT8531_RGMII_RXD_DS_LOW_MASK, ds_field_low);
  
@@ -66,7 +66,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  	if (ret < 0)
  		return ret;
  
-@@ -1829,7 +1832,9 @@ static int yt8531_config_init(struct phy
+@@ -1826,7 +1829,9 @@ static int yt8531_config_init(struct phy
  			return ret;
  	}
  

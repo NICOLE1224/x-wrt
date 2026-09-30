@@ -8,9 +8,6 @@ device and expose the required xPON service operations.
 
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
-diff --git b/drivers/net/ethernet/airoha/airoha_gpon_omci.c b/drivers/net/ethernet/airoha/airoha_gpon_omci.c
-new file mode 100644
-index 0000000..d47ca37
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_gpon_omci.c
 @@ -0,0 +1,250 @@
@@ -264,9 +261,6 @@ index 0000000..d47ca37
 +	omci_device_receive(omci->odev, skb, gem_port_id, omci_flags);
 +	return true;
 +}
-diff --git b/drivers/net/ethernet/airoha/airoha_gpon_omci.h b/drivers/net/ethernet/airoha/airoha_gpon_omci.h
-new file mode 100644
-index 0000000..a1c76db
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_gpon_omci.h
 @@ -0,0 +1,63 @@
@@ -333,9 +327,6 @@ index 0000000..a1c76db
 +					const struct omci_identity *identity);
 +
 +#endif /* _AIROHA_GPON_OMCI_H */
-diff --git b/drivers/net/ethernet/airoha/airoha_ploam.c b/drivers/net/ethernet/airoha/airoha_ploam.c
-new file mode 100644
-index 0000000..f494c06
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_ploam.c
 @@ -0,0 +1,762 @@
@@ -1101,9 +1092,6 @@ index 0000000..f494c06
 +	memcpy(pp->aes_key, key, 16);
 +	pp->key_exchange_pending = false;
 +}
-diff --git b/drivers/net/ethernet/airoha/airoha_ploam.h b/drivers/net/ethernet/airoha/airoha_ploam.h
-new file mode 100644
-index 0000000..86a6af2
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_ploam.h
 @@ -0,0 +1,164 @@
@@ -1271,9 +1259,6 @@ index 0000000..86a6af2
 +void ploam_set_aes_key(struct ploam_priv *pp, const u8 key[16]);
 +
 +#endif /* _ECONET_PLOAM_H */
-diff --git b/drivers/net/ethernet/airoha/airoha_xpon.c b/drivers/net/ethernet/airoha/airoha_xpon.c
-new file mode 100644
-index 0000000..70eb904
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_xpon.c
 @@ -0,0 +1,4248 @@
@@ -5525,9 +5510,6 @@ index 0000000..70eb904
 +MODULE_AUTHOR("Matheus Sampaio Queiroga <srherobrine20@gmail.com>");
 +MODULE_AUTHOR("Benjamin Larsson <benjamin.larsson@genexis.eu>");
 +MODULE_LICENSE("GPL");
-diff --git b/drivers/net/ethernet/airoha/airoha_xpon.h b/drivers/net/ethernet/airoha/airoha_xpon.h
-new file mode 100644
-index 0000000..ad7b50d
 --- /dev/null
 +++ b/drivers/net/ethernet/airoha/airoha_xpon.h
 @@ -0,0 +1,585 @@

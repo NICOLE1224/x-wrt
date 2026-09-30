@@ -68,7 +68,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +...
 --- a/drivers/phy/airoha/Kconfig
 +++ b/drivers/phy/airoha/Kconfig
-@@ -11,6 +11,17 @@ config PHY_AIROHA_PCIE
+@@ -12,6 +12,17 @@ config PHY_AIROHA_PCIE
  	  This driver create the basic PHY instance and provides initialize
  	  callback for PCIe GEN3 port.
  
@@ -182,5 +182,3 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +
 +MODULE_DESCRIPTION("Airoha AN7563 PCIe PHY driver");
 +MODULE_LICENSE("GPL");
--- 
-2.46.1
