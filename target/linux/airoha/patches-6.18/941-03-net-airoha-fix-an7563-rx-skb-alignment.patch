@@ -18,12 +18,9 @@ driver before the unified EN7523 changes.
 
 Signed-off-by: X-WRT <dev@x-wrt.com>
 ---
- drivers/net/ethernet/airoha/airoha_eth.c | 8 +++++++-
- 1 file changed, 7 insertions(+), 1 deletion(-)
-
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2371,10 +2371,16 @@ static struct sk_buff *airoha_qdma_build
+@@ -2374,10 +2374,16 @@ static struct sk_buff *airoha_qdma_build
  		u32 desc_ctrl = le32_to_cpu(READ_ONCE(desc->ctrl));
  		u32 len = FIELD_GET(QDMA_DESC_LEN_MASK, desc_ctrl);
  

@@ -94,7 +94,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  	return 0;
  }
  
-@@ -1228,6 +1251,14 @@ static const struct mtk_pcie_soc mtk_pci
+@@ -1230,6 +1253,14 @@ static const struct mtk_pcie_soc mtk_pci
  	.setup_irq = mtk_pcie_setup_irq,
  };
  
@@ -109,7 +109,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  static const struct mtk_pcie_soc mtk_pcie_soc_mt7622 = {
  	.need_fix_class_id = true,
  	.ops = &mtk_pcie_ops_v2,
-@@ -1245,6 +1276,7 @@ static const struct mtk_pcie_soc mtk_pci
+@@ -1247,6 +1278,7 @@ static const struct mtk_pcie_soc mtk_pci
  };
  
  static const struct of_device_id mtk_pcie_ids[] = {

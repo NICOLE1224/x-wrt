@@ -8,6 +8,10 @@ layout while retaining the newer Airoha PPE datapath.
 
 Use runtime bitfield helpers where masks are selected by SoC data.
 
+Keep hardware flow ownership until invalidation is acknowledged and
+propagate removal failures through L2 and TC paths. Publish the TC
+software table entry before exposing the flow to RX binding.
+
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
@@ -119,11 +123,11 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +static u32 airoha_ppe_sw_to_hw_idx(struct airoha_ppe *ppe, u32 sw_idx)
 +{
 +	u32 sram_num_entries = airoha_ppe_get_total_sram_num_entries(ppe);
-+
-+	if (airoha_is(ppe->common.eth, airoha_en7523) && sw_idx >= sram_num_entries)
-+		return ppe->common.eth->soc->ppe_dram_entries + sw_idx - sram_num_entries;
  
 -	return PPE_SRAM_NUM_ENTRIES * eth->soc->num_ppe;
++	if (airoha_is(ppe->common.eth, airoha_en7523) && sw_idx >= sram_num_entries)
++		return ppe->common.eth->soc->ppe_dram_entries + sw_idx - sram_num_entries;
++
 +	return sw_idx;
  }
  
@@ -885,7 +889,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	wmb();
  
  	e->ib1 &= ~AIROHA_FOE_IB1_BIND_TIMESTAMP;
-@@ -790,17 +1165,20 @@ static int airoha_ppe_foe_commit_entry(s
+@@ -790,89 +1165,118 @@ static int airoha_ppe_foe_commit_entry(s
  	rcu_read_lock();
  
  	npu = rcu_dereference(eth->npu);
@@ -916,7 +920,93 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	rcu_read_unlock();
  
  	return err;
-@@ -855,24 +1233,30 @@ static void airoha_ppe_foe_flow_remove_e
+ }
+ 
+-static void airoha_ppe_foe_remove_flow(struct airoha_ppe *ppe,
+-				       struct airoha_flow_table_entry *e)
++static int airoha_ppe_foe_remove_flow(struct airoha_ppe *ppe,
++				      struct airoha_flow_table_entry *e)
+ {
++	struct airoha_foe_entry data = e->data;
++	int err;
++
+ 	lockdep_assert_held(&ppe_lock);
+ 
+-	hlist_del_init(&e->list);
+ 	if (e->hash != 0xffff) {
+-		e->data.ib1 &= ~AIROHA_FOE_IB1_BIND_STATE;
+-		e->data.ib1 |= FIELD_PREP(AIROHA_FOE_IB1_BIND_STATE,
+-					  AIROHA_FOE_STATE_INVALID);
+-		airoha_ppe_foe_commit_entry(ppe, &e->data, e->hash, false);
++		data.ib1 &= ~AIROHA_FOE_IB1_BIND_STATE;
++		data.ib1 |= FIELD_PREP(AIROHA_FOE_IB1_BIND_STATE,
++				       AIROHA_FOE_STATE_INVALID);
++		err = airoha_ppe_foe_commit_entry(ppe, &data, e->hash, false);
++		if (err)
++			return err;
++		e->data = data;
+ 		e->hash = 0xffff;
+ 	}
++	hlist_del_init(&e->list);
+ 	if (e->type == FLOW_TYPE_L2_SUBFLOW) {
+ 		hlist_del_init(&e->l2_subflow_node);
+ 		kfree(e);
+ 	}
++
++	return 0;
+ }
+ 
+-static void airoha_ppe_foe_remove_l2_flow(struct airoha_ppe *ppe,
+-					  struct airoha_flow_table_entry *e)
++static int airoha_ppe_foe_remove_l2_flow(struct airoha_ppe *ppe,
++					 struct airoha_flow_table_entry *e)
+ {
+ 	struct hlist_head *head = &e->l2_flows;
+ 	struct hlist_node *n;
++	int err;
+ 
+ 	lockdep_assert_held(&ppe_lock);
+ 
+-	rhashtable_remove_fast(&ppe->l2_flows, &e->l2_node,
+-			       airoha_l2_flow_table_params);
+-	hlist_for_each_entry_safe(e, n, head, l2_subflow_node)
+-		airoha_ppe_foe_remove_flow(ppe, e);
++	hlist_for_each_entry_safe(e, n, head, l2_subflow_node) {
++		err = airoha_ppe_foe_remove_flow(ppe, e);
++		if (err)
++			return err;
++	}
++
++	return 0;
+ }
+ 
+-static void airoha_ppe_foe_flow_remove_entry(struct airoha_ppe *ppe,
+-					     struct airoha_flow_table_entry *e)
++static int airoha_ppe_foe_flow_remove_entry(struct airoha_ppe *ppe,
++					    struct airoha_flow_table_entry *e)
+ {
++	int err;
++
+ 	spin_lock_bh(&ppe_lock);
+ 
+-	if (e->type == FLOW_TYPE_L2)
+-		airoha_ppe_foe_remove_l2_flow(ppe, e);
+-	else
+-		airoha_ppe_foe_remove_flow(ppe, e);
++	if (e->type == FLOW_TYPE_L2) {
++		err = airoha_ppe_foe_remove_l2_flow(ppe, e);
++		if (!err)
++			rhashtable_remove_fast(&ppe->l2_flows, &e->l2_node,
++					       airoha_l2_flow_table_params);
++	} else {
++		err = airoha_ppe_foe_remove_flow(ppe, e);
++	}
+ 
+ 	spin_unlock_bh(&ppe_lock);
++
++	return err;
+ }
+ 
  static int
  airoha_ppe_foe_commit_subflow_entry(struct airoha_ppe *ppe,
  				    struct airoha_flow_table_entry *e,
@@ -952,7 +1042,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	memcpy(&hwe, hwe_p, sizeof(*hwe_p));
  	hwe.ib1 = (hwe.ib1 & mask) | (e->data.ib1 & ~mask);
-@@ -881,9 +1265,6 @@ airoha_ppe_foe_commit_subflow_entry(stru
+@@ -881,9 +1285,6 @@ airoha_ppe_foe_commit_subflow_entry(stru
  	if (type >= PPE_PKT_TYPE_IPV6_ROUTE_3T) {
  		memcpy(&hwe.ipv6.l2, &e->data.bridge.l2, sizeof(hwe.ipv6.l2));
  		hwe.ipv6.ib2 = e->data.bridge.ib2;
@@ -962,7 +1052,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		hwe.ipv6.l2.src_mac_hi = FIELD_PREP(AIROHA_FOE_MAC_SMAC_ID,
  						    0xf);
  	} else {
-@@ -896,14 +1277,344 @@ airoha_ppe_foe_commit_subflow_entry(stru
+@@ -896,14 +1297,344 @@ airoha_ppe_foe_commit_subflow_entry(stru
  	}
  
  	hwe.bridge.data = e->data.bridge.data;
@@ -1309,7 +1399,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  {
  	struct airoha_flow_table_entry *e;
  	struct airoha_foe_bridge br = {};
-@@ -914,7 +1625,7 @@ static void airoha_ppe_foe_insert_entry(
+@@ -914,7 +1645,7 @@ static void airoha_ppe_foe_insert_entry(
  
  	spin_lock_bh(&ppe_lock);
  
@@ -1318,7 +1408,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	if (!hwe)
  		goto unlock;
  
-@@ -922,6 +1633,34 @@ static void airoha_ppe_foe_insert_entry(
+@@ -922,6 +1653,34 @@ static void airoha_ppe_foe_insert_entry(
  	if (state == AIROHA_FOE_STATE_BIND)
  		goto unlock;
  
@@ -1353,7 +1443,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	index = airoha_ppe_foe_get_entry_hash(ppe, hwe);
  	hlist_for_each_entry_safe(e, n, &ppe->foe_flow[index], list) {
  		if (e->type == FLOW_TYPE_L2_SUBFLOW) {
-@@ -936,9 +1675,9 @@ static void airoha_ppe_foe_insert_entry(
+@@ -936,9 +1695,9 @@ static void airoha_ppe_foe_insert_entry(
  		if (!airoha_ppe_foe_compare_entry(e, hwe))
  			continue;
  
@@ -1365,7 +1455,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	}
  
  	if (commit_done)
-@@ -948,7 +1687,7 @@ static void airoha_ppe_foe_insert_entry(
+@@ -948,7 +1707,7 @@ static void airoha_ppe_foe_insert_entry(
  	e = rhashtable_lookup_fast(&ppe->l2_flows, &br,
  				   airoha_l2_flow_table_params);
  	if (e)
@@ -1374,7 +1464,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  unlock:
  	spin_unlock_bh(&ppe_lock);
  }
-@@ -965,8 +1704,12 @@ airoha_ppe_foe_l2_flow_commit_entry(stru
+@@ -965,8 +1724,12 @@ airoha_ppe_foe_l2_flow_commit_entry(stru
  	if (!prev)
  		return 0;
  
@@ -1388,7 +1478,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	return rhashtable_replace_fast(&ppe->l2_flows, &prev->l2_node,
  				       &e->l2_node,
-@@ -987,7 +1730,10 @@ static int airoha_ppe_foe_flow_commit_en
+@@ -987,7 +1750,10 @@ static int airoha_ppe_foe_flow_commit_en
  	e->hash = 0xffff;
  
  	spin_lock_bh(&ppe_lock);
@@ -1400,7 +1490,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	spin_unlock_bh(&ppe_lock);
  
  	return 0;
-@@ -1179,6 +1925,7 @@ static int airoha_ppe_flow_offload_repla
+@@ -1179,6 +1945,7 @@ static int airoha_ppe_flow_offload_repla
  
  			data.vlan.hdr[data.vlan.num].id = act->vlan.vid;
  			data.vlan.hdr[data.vlan.num].proto = act->vlan.proto;
@@ -1408,7 +1498,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  			data.vlan.num++;
  			break;
  		case FLOW_ACTION_VLAN_POP:
-@@ -1196,8 +1943,10 @@ static int airoha_ppe_flow_offload_repla
+@@ -1196,8 +1963,10 @@ static int airoha_ppe_flow_offload_repla
  	}
  
  	if (!is_valid_ether_addr(data.eth.h_source) ||
@@ -1420,7 +1510,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	err = airoha_ppe_foe_entry_prepare(eth, &hwe, odev, offload_type,
  					   &data, l4proto, dsfield);
-@@ -1258,8 +2007,10 @@ static int airoha_ppe_flow_offload_repla
+@@ -1258,8 +2027,10 @@ static int airoha_ppe_flow_offload_repla
  			return -EOPNOTSUPP;
  		}
  
@@ -1432,7 +1522,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	}
  
  	if (addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS) {
-@@ -1269,20 +2020,26 @@ static int airoha_ppe_flow_offload_repla
+@@ -1269,25 +2040,34 @@ static int airoha_ppe_flow_offload_repla
  	}
  
  	e = kzalloc(sizeof(*e), GFP_KERNEL);
@@ -1445,24 +1535,56 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	e->cookie = f->cookie;
  	memcpy(&e->data, &hwe, sizeof(e->data));
  
- 	err = airoha_ppe_foe_flow_commit_entry(eth->ppe, e);
+-	err = airoha_ppe_foe_flow_commit_entry(eth->ppe, e);
 -	if (err)
-+	if (err) {
-+		dev_err(eth->dev, "Failed to commit PPE flow entry (err: %d)\n", err);
- 		goto free_entry;
-+	}
- 
+-		goto free_entry;
+-
++	/* Publish software ownership before the RX path can bind the entry.
++	 * A failed table insert must never leave an unowned hardware flow.
++	 */
  	err = rhashtable_insert_fast(&eth->flow_table, &e->node,
  				     airoha_flow_table_params);
 -	if (err < 0)
-+	if (err < 0) {
+-		goto remove_foe_entry;
++	if (err) {
 +		dev_err(eth->dev, "Failed to insert into rhashtable (err: %d)\n", err);
- 		goto remove_foe_entry;
++		goto free_entry;
++	}
++
++	err = airoha_ppe_foe_flow_commit_entry(eth->ppe, e);
++	if (err) {
++		dev_err(eth->dev, "Failed to commit PPE flow entry (err: %d)\n", err);
++		rhashtable_remove_fast(&eth->flow_table, &e->node,
++				       airoha_flow_table_params);
++		goto free_entry;
 +	}
  
  	return 0;
  
-@@ -1312,41 +2069,6 @@ static int airoha_ppe_flow_offload_destr
+-remove_foe_entry:
+-	airoha_ppe_foe_flow_remove_entry(eth->ppe, e);
+ free_entry:
+ 	kfree(e);
+ 
+@@ -1298,13 +2078,16 @@ static int airoha_ppe_flow_offload_destr
+ 					   struct flow_cls_offload *f)
+ {
+ 	struct airoha_flow_table_entry *e;
++	int err;
+ 
+ 	e = rhashtable_lookup(&eth->flow_table, &f->cookie,
+ 			      airoha_flow_table_params);
+ 	if (!e)
+ 		return -ENOENT;
+ 
+-	airoha_ppe_foe_flow_remove_entry(eth->ppe, e);
++	err = airoha_ppe_foe_flow_remove_entry(eth->ppe, e);
++	if (err)
++		return err;
+ 	rhashtable_remove_fast(&eth->flow_table, &e->node,
+ 			       airoha_flow_table_params);
+ 	kfree(e);
+@@ -1312,41 +2095,6 @@ static int airoha_ppe_flow_offload_destr
  	return 0;
  }
  
@@ -1504,7 +1626,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  static int airoha_ppe_flow_offload_stats(struct airoha_eth *eth,
  					 struct flow_cls_offload *f)
  {
-@@ -1374,35 +2096,45 @@ static int airoha_ppe_flow_offload_stats
+@@ -1374,35 +2122,45 @@ static int airoha_ppe_flow_offload_stats
  }
  
  static int airoha_ppe_flow_offload_cmd(struct airoha_eth *eth,
@@ -1560,7 +1682,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	}
  
  	return err;
-@@ -1410,13 +2142,26 @@ static int airoha_ppe_flush_sram_entries
+@@ -1410,13 +2168,26 @@ static int airoha_ppe_flush_sram_entries
  
  static struct airoha_npu *airoha_ppe_npu_get(struct airoha_eth *eth)
  {
@@ -1590,7 +1712,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	return npu;
  }
  
-@@ -1429,16 +2174,23 @@ static int airoha_ppe_wait_for_npu_init(
+@@ -1429,16 +2200,23 @@ static int airoha_ppe_wait_for_npu_init(
  	 * during the device probe we can just check the configured value
  	 * is not 0 here.
  	 */
@@ -1616,7 +1738,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	return err;
  }
-@@ -1449,24 +2201,43 @@ static int airoha_ppe_offload_setup(stru
+@@ -1449,24 +2227,43 @@ static int airoha_ppe_offload_setup(stru
  	struct airoha_ppe *ppe = eth->ppe;
  	int err, ppe_num_stats_entries;
  
@@ -1673,7 +1795,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	}
  
  	airoha_ppe_hw_init(ppe);
-@@ -1475,10 +2246,11 @@ static int airoha_ppe_offload_setup(stru
+@@ -1475,10 +2272,11 @@ static int airoha_ppe_offload_setup(stru
  	rcu_assign_pointer(eth->npu, npu);
  	synchronize_rcu();
  
@@ -1686,7 +1808,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	return err;
  }
-@@ -1486,7 +2258,7 @@ error_npu_put:
+@@ -1486,7 +2284,7 @@ error_npu_put:
  int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
  {
  	struct airoha_ppe *ppe = dev->priv;
@@ -1695,7 +1817,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	int err = 0;
  
  	/* Netfilter flowtable can try to offload flower rules while not all
-@@ -1498,10 +2270,12 @@ int airoha_ppe_setup_tc_block_cb(struct
+@@ -1498,10 +2296,12 @@ int airoha_ppe_setup_tc_block_cb(struct
  
  	mutex_lock(&flow_offload_mutex);
  
@@ -1710,7 +1832,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	mutex_unlock(&flow_offload_mutex);
  
-@@ -1512,19 +2286,19 @@ void airoha_ppe_check_skb(struct airoha_
+@@ -1512,19 +2312,19 @@ void airoha_ppe_check_skb(struct airoha_
  			  u16 hash, bool rx_wlan)
  {
  	struct airoha_ppe *ppe = dev->priv;
@@ -1735,7 +1857,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  }
  
  void airoha_ppe_init_upd_mem(struct airoha_gdm_dev *dev, const u8 *addr)
-@@ -1533,6 +2307,8 @@ void airoha_ppe_init_upd_mem(struct airo
+@@ -1533,6 +2333,8 @@ void airoha_ppe_init_upd_mem(struct airo
  	struct airoha_eth *eth = dev->eth;
  	u32 val;
  
@@ -1744,7 +1866,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	val = (addr[2] << 24) | (addr[3] << 16) | (addr[4] << 8) | addr[5];
  	airoha_fe_wr(eth, REG_UPDMEM_DATA(0), val);
  	airoha_fe_wr(eth, REG_UPDMEM_CTRL(0),
-@@ -1571,8 +2347,10 @@ struct airoha_ppe_dev *airoha_ppe_get_de
+@@ -1571,8 +2373,10 @@ struct airoha_ppe_dev *airoha_ppe_get_de
  	}
  
  	eth = platform_get_drvdata(pdev);
@@ -1756,7 +1878,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	if (!device_link_add(dev, &pdev->dev, DL_FLAG_AUTOREMOVE_SUPPLIER)) {
  		dev_err(&pdev->dev,
-@@ -1581,7 +2359,13 @@ struct airoha_ppe_dev *airoha_ppe_get_de
+@@ -1581,7 +2385,13 @@ struct airoha_ppe_dev *airoha_ppe_get_de
  		goto error_module_put;
  	}
  
@@ -1771,7 +1893,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  error_module_put:
  	module_put(THIS_MODULE);
-@@ -1594,42 +2378,81 @@ EXPORT_SYMBOL_GPL(airoha_ppe_get_dev);
+@@ -1594,42 +2404,81 @@ EXPORT_SYMBOL_GPL(airoha_ppe_get_dev);
  
  void airoha_ppe_put_dev(struct airoha_ppe_dev *dev)
  {
@@ -1870,7 +1992,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
  	if (ppe_num_stats_entries > 0) {
-@@ -1637,32 +2460,46 @@ int airoha_ppe_init(struct airoha_eth *e
+@@ -1637,32 +2486,46 @@ int airoha_ppe_init(struct airoha_eth *e
  		ppe->foe_stats = dmam_alloc_coherent(eth->dev, foe_size,
  						     &ppe->foe_stats_dma,
  						     GFP_KERNEL);
@@ -1927,7 +2049,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	return 0;
  
  error_l2_flow_table_destroy:
-@@ -1673,7 +2510,7 @@ error_flow_table_destroy:
+@@ -1673,7 +2536,7 @@ error_flow_table_destroy:
  	return err;
  }
  
@@ -1936,7 +2058,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  {
  	struct airoha_npu *npu;
  
-@@ -1683,13 +2520,1345 @@ void airoha_ppe_deinit(struct airoha_eth
+@@ -1683,13 +2546,1345 @@ void airoha_ppe_deinit(struct airoha_eth
  				  lockdep_is_held(&flow_offload_mutex));
  	if (npu) {
  		synchronize_rcu();
@@ -1979,7 +2101,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	dma_rmb();
 +	for (i = 0; i < AIROHA_FOE_ENTRY_WORDS; i++)
 +		entry->words[i] = READ_ONCE(slot[i]);
-+}
+ }
 +
 +static bool airoha_ppe_v1_cache_cmd(struct airoha_ppe *ppe, u32 cmd)
 +{
@@ -2068,7 +2190,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	l2[3] = get_unaligned_be32(src_mac);
 +	l2[4] = FIELD_PREP(AIROHA_FOE_L2_SMAC_LO,
 +			   get_unaligned_be16(src_mac + 4));
- }
++}
 +
 +static void airoha_foe_v1_entry_set_ipv4_tuple(struct airoha_foe_entry *entry,
 +						bool egress, __be32 src_addr,

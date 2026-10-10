@@ -183,12 +183,20 @@ smartrg,sdg-8712|\
 smartrg,sdg-8732|\
 smartrg,sdg-8733|\
 smartrg,sdg-8733a|\
-smartrg,sdg-8734)
+smartrg,sdg-8734|\
+smartrg,sdg-9000)
 	ubootenv_add_mmc "u-boot-env" "mmcblk0" "0x0" "0x8000" "0x8000"
 	;;
 teltonika,rutc50|\
 alwaylink,m01k43)
 	ubootenv_add_mtd "u-boot-env" "0x0" "0x10000" "0x10000"
+	;;
+tenda,tr9)
+	ubootenv_add_mtd "u-boot-env" "0x0" "0x20000" "0x20000" "1"
+	factory_idx="$(find_mtd_index Factory)"
+	[ -n "$factory_idx" ] && \
+		ubootenv_add_uci_sys_config "/dev/mtd$factory_idx" \
+			"0x300000" "0x20000" "0x20000" "1"
 	;;
 tplink,archer-ax80-v1|\
 tplink,archer-ax80-v1-eu|\

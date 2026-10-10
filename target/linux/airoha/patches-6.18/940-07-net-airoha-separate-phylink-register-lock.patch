@@ -10,13 +10,9 @@ and leave the port spinlock dedicated to MIB state.
 
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
- drivers/net/ethernet/airoha/airoha_eth.c | 5 +++--
- drivers/net/ethernet/airoha/airoha_eth.h | 4 +++-
- 2 files changed, 6 insertions(+), 3 deletions(-)
-
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -8660,7 +8660,7 @@ static void airoha_mac_link_up(void *pri
+@@ -8672,7 +8672,7 @@ static void airoha_mac_link_up(void *pri
  		frag_size_rx = 0;
  	}
  
@@ -25,7 +21,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	/* Configure TX/RX frag based on speed */
  	if (dev->nbq == 1) {
-@@ -8685,7 +8685,7 @@ static void airoha_mac_link_up(void *pri
+@@ -8697,7 +8697,7 @@ static void airoha_mac_link_up(void *pri
  	}
  	airoha_fe_rmw(eth, REG_FE_GDM4_RMBI_FRAG, mask, val);
  
@@ -34,7 +30,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  }
  
  /* Nothing to do in MAC, everything is handled in PCS. */
-@@ -8934,6 +8934,7 @@ static int airoha_alloc_gdm_port(struct
+@@ -8946,6 +8946,7 @@ static int airoha_alloc_gdm_port(struct
  
  	port->id = id;
  	spin_lock_init(&port->lock);

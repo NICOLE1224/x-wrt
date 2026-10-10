@@ -206,7 +206,8 @@ mediatek_setup_interfaces()
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
 	openembed,som7981|\
-	openwrt,one)
+	openwrt,one|\
+	tenda,tr9)
 		ucidef_set_interfaces_lan_wan eth1 eth0
 		;;
 	dlink,aquila-pro-ai-e30-a1|\
@@ -248,12 +249,15 @@ mediatek_setup_interfaces()
 	mercusys,mr90x-v1-ubi)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2" eth1
 		;;
+	ruijie,rg-x60)
+		ucidef_set_interfaces_lan_wan "lan2 lan3 lan4" eth1
+		;;
 	smartrg,sdg-8712|\
 	smartrg,sdg-8732)
 		ucidef_set_interfaces_lan_wan "lan1 lan2" wan
 		;;
-	ruijie,rg-x60)
-		ucidef_set_interfaces_lan_wan "lan2 lan3 lan4" eth1
+	smartrg,sdg-9000)
+		ucidef_set_interfaces_lan_wan "aux lan1 lan2 lan3 lan4 lan5 lan6 lan7 lan8 lan9" wan
 		;;
 	tenda,be12-pro)
 		ucidef_set_interfaces_lan_wan "lan3 lan4 lan5 eth1" eth2
@@ -435,6 +439,9 @@ mediatek_setup_macs()
 		wan_mac=$label_mac
 		lan_mac=$(macaddr_add "$label_mac" 1)
 		;;
+	smartrg,sdg-9000)
+		lan_mac=$(macaddr_add "$(mmc_get_mac_ascii mfginfo MFG_MAC)" 1)
+		;;
 	tenda,ax12-pro-v2|\
 	tenda,ax12l-pro)
 		label_mac=$(cat /sys/class/net/eth0/address)
@@ -477,10 +484,22 @@ mediatek_setup_macs()
 	[ -n "$label_mac" ] && ucidef_set_label_macaddr $label_mac
 }
 
+mediatek_setup_poe()
+{
+	local board="$1"
+
+	case $board in
+	smartrg,sdg-9000)
+		ucidef_set_poe 200 "lan1 lan2 lan3 lan4 lan5 lan6 lan7 lan8"
+		;;
+	esac
+}
+
 board_config_update
 board=$(board_name)
 mediatek_setup_interfaces $board
 mediatek_setup_macs $board
+mediatek_setup_poe $board
 board_config_flush
 
 exit 0

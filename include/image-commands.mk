@@ -3,12 +3,6 @@
 IMAGE_KERNEL = $(word 1,$^)
 IMAGE_ROOTFS = $(word 2,$^)
 
-# check for pigz in STAGING_DIR_HOST and set GZIPCMD
-GZIPCMD := $(shell [ -x "$(STAGING_DIR_HOST)/bin/pigz" ] && echo pigz || echo gzip)
-ifndef CONFIG_TARGET_IMAGES_PIGZ
-  GZIPCMD := gzip
-endif
-
 define ModelNameLimit16
 $(shell printf %.16s "$(word 2, $(subst _, ,$(1)))")
 endef
@@ -36,6 +30,9 @@ endef
 define Build/package-kernel-ubifs
 	mkdir $@.kernelubifs
 	cp $@ $@.kernelubifs/kernel
+	$(if $(SOURCE_DATE_EPOCH), \
+		touch -hcd "@$(SOURCE_DATE_EPOCH)" \
+		$@.kernelubifs $@.kernelubifs/kernel)
 	$(STAGING_DIR_HOST)/bin/mkfs.ubifs \
 		$(KERNEL_UBIFS_OPTS) \
 		-r $@.kernelubifs $@
@@ -422,9 +419,9 @@ define Build/elx-header
 		hw_id="$(hw_id)"; \
 		echo -ne "\x$${hw_id:0:2}\x$${hw_id:2:2}\x$${hw_id:4:2}\x$${hw_id:6:2}" | \
 			dd bs=20 count=1 conv=sync; \
-		echo -ne "$$(printf '%08x' $$(stat -c%s $@) | fold -s2 | xargs -I {} echo \\x{} | tr -d '\n')" | \
+		echo -ne "$$(printf '%08x' $$(stat -c%s $@) | fold -w2 | xargs -I {} echo \\x{} | tr -d '\n')" | \
 			dd bs=8 count=1 conv=sync; \
-		echo -ne "$$($(MKHASH) md5 $@ | fold -s2 | xargs -I {} echo \\x{} | tr -d '\n')" | \
+		echo -ne "$$($(MKHASH) md5 $@ | fold -w2 | xargs -I {} echo \\x{} | tr -d '\n')" | \
 			dd bs=58 count=1 conv=sync; \
 	) > $(KDIR)/tmp/$(DEVICE_NAME).header
 	-$(call Build/xor-image,-p $(xor_pattern) -x) \
@@ -496,7 +493,7 @@ define Build/libdeflate-gzip
 endef
 
 define Build/gzip
-	$(STAGING_DIR_HOST)/bin/$(GZIPCMD) -f -9n -c $@ $(1) > $@.new
+	$(STAGING_DIR_HOST)/bin/gzip -f -9n -c $@ $(1) > $@.new
 	@mv $@.new $@
 endef
 
@@ -504,7 +501,7 @@ define Build/gzip-filename
 	@mkdir -p $@.tmp
 	@cp $@ $@.tmp/$(word 1,$(1))
 	$(if $(SOURCE_DATE_EPOCH),touch -hcd "@$(SOURCE_DATE_EPOCH)" $@.tmp/$(word 1,$(1)) $(word 2,$(1)))
-	$(STAGING_DIR_HOST)/bin/$(GZIPCMD) -f -9 -N -c $@.tmp/$(word 1,$(1)) $(word 2,$(1)) > $@.new
+	$(STAGING_DIR_HOST)/bin/gzip -f -9 -N -c $@.tmp/$(word 1,$(1)) $(word 2,$(1)) > $@.new
 	@mv $@.new $@
 	@rm -rf $@.tmp
 endef

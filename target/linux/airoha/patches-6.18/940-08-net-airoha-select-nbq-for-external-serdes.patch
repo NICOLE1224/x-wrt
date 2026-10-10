@@ -11,9 +11,6 @@ Keep the existing GPON T-CONT and DSA port selections at higher priority.
 Fixes: 7758cb462ff7 ("net: airoha: Introduce WAN device flag")
 Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
 ---
- drivers/net/ethernet/airoha/airoha_ppe.c | 5 ++---
- 1 file changed, 2 insertions(+), 3 deletions(-)
-
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
 @@ -712,9 +712,8 @@ static int airoha_ppe_foe_entry_prepare(

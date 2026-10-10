@@ -74,7 +74,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  put_resources:
 --- a/drivers/pci/pci.c
 +++ b/drivers/pci/pci.c
-@@ -4550,6 +4550,7 @@ int pcie_retrain_link(struct pci_dev *pd
+@@ -4570,6 +4570,7 @@ int pcie_retrain_link(struct pci_dev *pd
  
  	return rc;
  }

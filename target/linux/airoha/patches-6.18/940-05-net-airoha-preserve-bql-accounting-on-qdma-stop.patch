@@ -13,12 +13,9 @@ implementation so an interface restart does not retain stale queued bytes.
 
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
- drivers/net/ethernet/airoha/airoha_eth.c | 22 ++++++++++++++++------
- 1 file changed, 16 insertions(+), 6 deletions(-)
-
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -1904,13 +1904,20 @@ static void econet_qdma_cleanup_tx(struc
+@@ -1907,13 +1907,20 @@ static void econet_qdma_cleanup_tx(struc
  		guard(spinlock_bh)(&q->lock_bh);
  		for (j = 0; j < q->ndesc; j++) {
  			struct econet_q_tx_ent *e = &q->entry[j];
@@ -40,7 +37,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  			memset(e, 0, sizeof(*e));
  
  			e->freelist_next = 0xffff;
-@@ -3056,12 +3063,19 @@ void airoha_qdma_cleanup_tx_queue(struct
+@@ -3065,12 +3072,19 @@ void airoha_qdma_cleanup_tx_queue(struct
  	for (i = 0; i < q->ndesc; i++) {
  		struct airoha_queue_entry *e = &q->entry[i];
  		struct airoha_qdma_desc *desc = &q->desc[i];
@@ -61,7 +58,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		e->skb = NULL;
  		list_add_tail(&e->list, &q->tx_list);
  
-@@ -6606,15 +6620,11 @@ static int airoha_dev_stop(struct net_de
+@@ -6616,15 +6630,11 @@ static int airoha_dev_stop(struct net_de
  		airoha_qdma_stop(qdma);
  	} else {
  		bool xpon_control;

@@ -38,13 +38,9 @@ Acked-by: Lorenzo Bianconi <lorenzo@kernel.org>
 Link: https://patch.msgid.link/20260707152639.105628-1-aniket.negi03@gmail.com
 Signed-off-by: Paolo Abeni <pabeni@redhat.com>
 ---
- drivers/net/ethernet/airoha/airoha_eth.c | 171 ++++++++++++++---------
- drivers/net/ethernet/airoha/airoha_eth.h |  27 ++++
- 2 files changed, 132 insertions(+), 66 deletions(-)
-
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -6161,11 +6161,14 @@ static void airoha_hw_cleanup(struct air
+@@ -6171,11 +6171,14 @@ static void airoha_hw_cleanup(struct air
  
  
  
@@ -60,7 +56,7 @@ Signed-off-by: Paolo Abeni <pabeni@redhat.com>
  
  	/* Read relevant MIB for GDM with multiple port attached */
  	if (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)
-@@ -6176,152 +6179,188 @@ static void airoha_dev_get_hw_stats(stru
+@@ -6186,152 +6189,188 @@ static void airoha_dev_get_hw_stats(stru
  
  	u64_stats_update_begin(&dev->stats.syncp);
  
