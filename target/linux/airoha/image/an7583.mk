@@ -6,9 +6,16 @@ define Build/an7583-preloader
 endef
 
 define Build/an7583-bl31-uboot
+  @if [ -f "$(STAGING_DIR_IMAGE)/an7583_$1-u-boot.lzma" ]; then \
+    UBOOT_BIN="$(STAGING_DIR_IMAGE)/an7583_$1-u-boot.lzma"; \
+  elif [ -f "$(STAGING_DIR_IMAGE)/an7583_$1-u-boot.bin.lzma" ]; then \
+    UBOOT_BIN="$(STAGING_DIR_IMAGE)/an7583_$1-u-boot.bin.lzma"; \
+  else \
+    UBOOT_BIN="$(STAGING_DIR_IMAGE)/an7583_$1-u-boot.bin"; \
+  fi; \
   $(STAGING_DIR_HOST)/bin/fiptool create \
 		--soc-fw $(STAGING_DIR_IMAGE)/an7583-bl31.lzma \
-		--nt-fw $(STAGING_DIR_IMAGE)/an7583_$1-u-boot.lzma \
+		--nt-fw "$$UBOOT_BIN" \
 		$(STAGING_DIR_IMAGE)/an7583_$1-bl31-u-boot.fip
   cat $(STAGING_DIR_IMAGE)/an7583_$1-bl31-u-boot.fip >> $@
 endef
@@ -56,6 +63,8 @@ define Device/nokia_xg-040g-mf-common
   UBINIZE_OPTS := -E 5
   DEVICE_PACKAGES := kmod-phy-airoha-en8811h \
 	kmod-regulator-userspace-consumer kmod-usb-ledtrig-usbport
+  DEVICE_PACKAGES += kmod-airoha-en7572 kmod-airoha-xpon \
+	airoha-ponctl airoha-pond airoha-pon-board-data kmod-crypto-ecb
 endef
 
 define Device/nokia_xg-040g-mf

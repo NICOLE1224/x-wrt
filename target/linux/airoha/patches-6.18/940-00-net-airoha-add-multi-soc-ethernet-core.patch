@@ -5322,7 +5322,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	dev_info_ratelimited(&netdev->dev,
 +			     "GPON OAM RX descriptor: index=%u dma=%#010x ctrl=%#010x done=%u len=%u msg=%#010x/%#010x/%#010x/%#010x oam=%u channel=%u gem=%u no-mic=%u\n",
 +			     index,
-+			     ring_base + index * sizeof(struct airoha_qdma_desc),
++			     (u32)(ring_base + index * sizeof(struct airoha_qdma_desc)),
 +			     ctrl, !!(ctrl & QDMA_DESC_DONE_MASK), desc_len,
 +			     msg0, msg1, msg2, msg3,
 +			     !!(msg0 & EN7523_QDMA_ETH_RXMSG_OAM_MASK),
