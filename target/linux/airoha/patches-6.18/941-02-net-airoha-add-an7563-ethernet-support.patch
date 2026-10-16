@@ -505,10 +505,11 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		airoha_fe_rmw(eth, REG_GDM_SRC_PORT_SET(4),
  		      GDM_SPORT_OFF2_MASK |
  		      GDM_SPORT_OFF1_MASK |
-@@ -5957,14 +6041,22 @@ static int airoha_fe_init(struct airoha_
+@@ -5957,16 +6041,24 @@ static int airoha_fe_init(struct airoha_
  		      FIELD_PREP(FE_DMA_GLO_L2_SPACE_MASK, airoha_is(eth, airoha_en7523) ? 3 : 2) |
  		      FE_DMA_GLO_PG_SZ_MASK);
  
+-	if (airoha_is(eth, airoha_en7523)) {
 +	if (airoha_is(eth, airoha_an7563)) {
 +		err = regmap_clear_bits(eth->scu, AN7563_SCU_SSR3,
 +					AN7563_SCU_SSR3_GDMP_CLK_SEL);
@@ -516,10 +517,12 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
 +			return err;
 +	}
 +
- 	/* map GDMP sram to fe */
- 	airoha_wr(eth->gdmp_regs, 0x74, 3);
- 	/* set PSE buffer to 0x500 = 0x400(pse itself) + 0x100(GDMP buffer) */
- 	airoha_fe_wr(eth, eth->soc->pse_fq_cfg, 0x500);
++	if (airoha_is(eth, airoha_en7523, airoha_an7563)) {
+ 		/* map GDMP sram to fe */
+ 		airoha_wr(eth->gdmp_regs, 0x74, 3);
+ 		/* PSE SRAM: 0x400 native pages + 0x100 GDMP pages. */
+ 		airoha_fe_wr(eth, eth->soc->pse_fq_cfg, 0x500);
+ 	}
  
 -	airoha_fe_wr(eth, REG_FE_RST_GLO_CFG,
 -		     FE_RST_CORE_MASK | FE_RST_GDM3_MBI_ARB_MASK |
@@ -531,7 +534,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  	usleep_range(1000, 2000);
  
  	/* connect RxRing1 and RxRing15 to PSE Port0 OQ-1
-@@ -5976,14 +6068,18 @@ static int airoha_fe_init(struct airoha_
+@@ -5978,14 +6070,18 @@ static int airoha_fe_init(struct airoha_
  	airoha_fe_wr(eth, REG_FE_CDM1_OQ_MAP3, BIT(28));
  
  	airoha_fe_vip_setup(eth);
@@ -552,7 +555,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		airoha_fe_set(eth, REG_GDM_MISC_CFG,
  			      GDM2_RDM_ACK_WAIT_PREF_MASK |
  			      GDM2_CHN_VLD_MODE_MASK);
-@@ -6002,23 +6098,29 @@ static int airoha_fe_init(struct airoha_
+@@ -6004,23 +6100,29 @@ static int airoha_fe_init(struct airoha_
  			FIELD_PREP(WIFI_OFFLOAD_FC_EN_MASK, 1));
  
  	/* init fragment and assemble Force Port */
@@ -591,7 +594,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  
  	/*
  	 * GDM2 is used as the EN7523 xPON datapath. Short Ethernet
-@@ -6027,17 +6129,19 @@ static int airoha_fe_init(struct airoha_
+@@ -6029,17 +6131,19 @@ static int airoha_fe_init(struct airoha_
  	 * Without this, the upstream transmits runt frames which are
  	 * discarded by the OLT or the peer.
  	 */
@@ -618,7 +621,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  
  	airoha_fe_crsn_qsel_init(eth);
  
-@@ -6046,7 +6150,7 @@ static int airoha_fe_init(struct airoha_
+@@ -6048,7 +6152,7 @@ static int airoha_fe_init(struct airoha_
  	 * 16 MiB for 16K 1 KiB payloads.  FAQ thresholds must follow the
  	 * payload size selected for the corresponding QDMA.
  	 */
@@ -627,7 +630,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		airoha_fe_wr(eth, REG_CDM_FAQ_CFG(1), 0x07c7);
  		airoha_fe_wr(eth, REG_CDM_FAQ_THR_CFG(1), 0xc40007f0);
  		airoha_fe_wr(eth, REG_CDM_FAQ_CFG(2), 0x07e7);
-@@ -6483,6 +6587,62 @@ out:
+@@ -6485,6 +6589,62 @@ out:
  	mutex_unlock(&dev->xpon_lock);
  }
  
@@ -690,7 +693,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  static void airoha_dev_set_mtu(struct net_device *netdev)
  {
  	struct airoha_gdm_dev *dev = netdev_priv(netdev);
-@@ -6617,6 +6777,7 @@ static int airoha_dev_open(struct net_de
+@@ -6619,6 +6779,7 @@ static int airoha_dev_open(struct net_de
  
  		airoha_dev_set_mtu(netdev);
  		port->users++;
@@ -698,7 +701,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		airoha_qdma_start(qdma);
  
  		if (!airoha_is_lan_gdm_dev(dev) &&
-@@ -6681,6 +6842,7 @@ static int airoha_dev_stop(struct net_de
+@@ -6683,6 +6844,7 @@ static int airoha_dev_stop(struct net_de
  						    REG_GDM_FWD_CFG(port->id),
  						    FE_PSE_PORT_DROP);
  		airoha_qdma_stop(qdma);
@@ -706,7 +709,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		airoha_update_netdev_features(dev);
  	}
  
-@@ -6985,8 +7147,11 @@ static int airoha_gdm_dev_change_mtu(str
+@@ -6987,8 +7149,11 @@ static int airoha_gdm_dev_change_mtu(str
  		set_gdm_len_th_oversize_len(&rlt,
  					    econet_gdm_oversize_len(dev, mtu));
  		econet_wreg(rlt, &dev->econet_regs->rx_len_threshold);
@@ -720,7 +723,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  	}
  
  	return 0;
-@@ -7011,9 +7176,17 @@ static u16 airoha_dev_select_queue(struc
+@@ -7013,9 +7178,17 @@ static u16 airoha_dev_select_queue(struc
  	 * index, rely on port id otherwise. Select QoS queue based on skb
  	 * priority.
  	 */
@@ -740,7 +743,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  	queue = channel * AIROHA_NUM_QOS_QUEUES + queue;
  
  	return queue % dev->eth->soc->tx_ring;
-@@ -7325,6 +7498,18 @@ static netdev_tx_t __airoha_dev_xmit(str
+@@ -7327,6 +7500,18 @@ static netdev_tx_t __airoha_dev_xmit(str
  	u16 index, queue_mapping;
  	u8 fport;
  
@@ -759,7 +762,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  	rcu_read_lock();
  	qdma = rcu_dereference(dev->qdma);
  	if (!xpon && (dev->flags & AIROHA_PRIV_F_XPON_MANAGED) &&
-@@ -7379,8 +7564,14 @@ static netdev_tx_t __airoha_dev_xmit(str
+@@ -7381,8 +7566,14 @@ static netdev_tx_t __airoha_dev_xmit(str
  			goto error_unlock;
  		tag = skb_meta.mtk_tag;
  		chn = skb_meta.channel;
@@ -775,7 +778,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  		       FIELD_PREP(QDMA_ETH_TXMSG_QUEUE_MASK,
  				  qid % AIROHA_NUM_QOS_QUEUES) |
  		       FIELD_PREP(QDMA_ETH_TXMSG_SP_TAG_MASK, tag);
-@@ -7416,6 +7607,9 @@ static netdev_tx_t __airoha_dev_xmit(str
+@@ -7418,6 +7609,9 @@ static netdev_tx_t __airoha_dev_xmit(str
  				  xpon ? xpon->tcont : dev->nbq) |
  		       FIELD_PREP(QDMA_ETH_TXMSG_FPORT_MASK, fport) |
  		       FIELD_PREP(QDMA_ETH_TXMSG_METER_MASK, 0x7f);
@@ -785,7 +788,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  
  	if (xpon_oam)
  		msg1 |= QDMA_ETH_TXMSG_NO_DROP;
-@@ -9622,6 +9816,25 @@ const struct airoha_eth_soc_data econet_
+@@ -9624,6 +9818,25 @@ const struct airoha_eth_soc_data econet_
  	},
  };
  
@@ -811,7 +814,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  const struct airoha_eth_soc_data airoha_en7581_soc_data = {
  	.version = airoha_en7581,
  	.xsi_rsts_names = en7581_xsi_rsts_names,
-@@ -9715,6 +9928,15 @@ static int airoha_eth_probe(struct platf
+@@ -9717,6 +9930,15 @@ static int airoha_eth_probe(struct platf
  	eth->ppe_host_ops = &airoha_ppe_host_ops;
  	econet = airoha_is_econet(eth);
  	platform_set_drvdata(pdev, eth);
@@ -827,7 +830,16 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
  
  	err = airoha_eth_set_dma_mask(eth->dev);
  	if (err)
-@@ -10090,6 +10312,7 @@ static const struct of_device_id airoha_
+@@ -9729,7 +9951,7 @@ static int airoha_eth_probe(struct platf
+ 		goto error;
+ 	}
+ 
+-	if (econet || airoha_is(eth, airoha_en7523)) {
++	if (econet || airoha_is(eth, airoha_en7523, airoha_an7563)) {
+ 		eth->gdmp_regs = devm_platform_ioremap_resource_byname(pdev, "gdmp");
+ 		if (IS_ERR(eth->gdmp_regs)) {
+ 			err = dev_err_probe(eth->dev, PTR_ERR(eth->gdmp_regs),
+@@ -10094,6 +10316,7 @@ static const struct of_device_id airoha_
  	{ .compatible = "econet,en751221-eth", .data = &econet_en751221_soc_data },
  	{ .compatible = "econet,en7528-eth", .data = &econet_en7528_soc_data },
  	{ .compatible = "econet,en7580-eth", .data = &econet_en7580_soc_data },

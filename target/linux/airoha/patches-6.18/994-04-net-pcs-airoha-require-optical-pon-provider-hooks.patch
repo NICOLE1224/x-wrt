@@ -1,11 +1,11 @@
-From: PTPT52.AI <ptpt52@gmail.com>
+From: Chen Minqiang <ptpt52@gmail.com>
 Subject: [PATCH] net: pcs: airoha: require optical hooks for PON line APIs
 
 The AN7563 copper PCS also has PON port type, but has no optical line
 callbacks. Reject the optical API before touching its distinct PMA
 registers or dereferencing an absent callback.
 
-Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
+Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
 --- a/drivers/net/pcs/airoha/pcs-airoha-common.c
 +++ b/drivers/net/pcs/airoha/pcs-airoha-common.c

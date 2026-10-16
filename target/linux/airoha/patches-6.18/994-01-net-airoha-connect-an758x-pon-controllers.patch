@@ -1,12 +1,15 @@
-From: PTPT52.AI <ptpt52@gmail.com>
+From: Chen Minqiang <ptpt52@gmail.com>
 Subject: [PATCH] net: airoha: connect AN7581 and AN7583 PON controllers
 
 Adapt the PonWrt PON data and control API to the shared multi-SoC
 Ethernet core. Keep QDMA ownership and DMA mapping in the Ethernet
 driver, and bind optical controllers only to AN7581/AN7583 PON GDM2.
 
+Recognize native netdev operations in the PON API and
+TX completion path before accessing the Ethernet private data.
+
 Based on the PON paths by pbs05.
-Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
+Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
@@ -18,16 +21,21 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  #include <linux/of.h>
  #include <linux/of_net.h>
  #include <linux/of_reserved_mem.h>
-@@ -62,6 +63,8 @@
+@@ -62,6 +63,13 @@
  #include "airoha_regs.h"
  #include "airoha_wed.h"
  
 +static const struct net_device_ops airoha_netdev_ops;
 +
++static bool airoha_is_netdev(const struct net_device *netdev)
++{
++	return netdev && netdev->netdev_ops == &airoha_netdev_ops;
++}
++
  static void econet_prepare_qdma_cfg(struct airoha_qdma_mips_cfg *cfg,
  				    const struct airoha_eth_soc_data *soc,
  				    int id);
-@@ -2151,7 +2154,7 @@
+@@ -2151,7 +2159,7 @@
  			struct airoha_gdm_dev *dev = port->devs[j];
  
  			if (dev &&
@@ -36,7 +44,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  				return dev;
  		}
  	}
-@@ -2356,6 +2359,66 @@
+@@ -2356,6 +2364,66 @@
  	return (ip4 || ip6) && l4_valid && !ip4_fault && !l4_fault;
  }
  
@@ -103,7 +111,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  static struct sk_buff *airoha_qdma_build_rx_skb(struct airoha_queue *q,
  						struct airoha_qdma_desc *desc,
  						struct airoha_queue_entry *e,
-@@ -2436,7 +2499,7 @@
+@@ -2436,7 +2504,7 @@
  		struct airoha_queue_entry *e = &q->entry[q->tail];
  		struct airoha_qdma_desc *desc = &q->desc[q->tail];
  		u32 hash, reason, msg0, msg1, desc_ctrl;
@@ -112,7 +120,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		struct net_device *netdev;
  		bool xpon_oam;
  		int data_len, len;
-@@ -2497,7 +2560,10 @@
+@@ -2497,7 +2565,10 @@
  			 * source port. Resolve them through the registered xPON GDM2
  			 * provider before applying the normal source-port decoder.
  			 */
@@ -124,7 +132,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  				dev = airoha_qdma_get_xpon_dev(eth);
  			else
  				dev = airoha_qdma_get_gdm_dev(eth,
-@@ -2512,6 +2578,38 @@
+@@ -2512,6 +2583,38 @@
  			}
  
  			netdev = netdev_from_priv(dev);
@@ -163,7 +171,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		}
  		if (!q->skb) { /* first buffer */
  			q->skb = airoha_qdma_build_rx_skb(q, desc, e, netdev, xpon_oam);
-@@ -2656,10 +2754,19 @@
+@@ -2648,10 +2751,19 @@
  					     false);
  
  		done++;
@@ -183,7 +191,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		if (q->skb) {
  			dev_kfree_skb(q->skb);
  			q->skb = NULL;
-@@ -2871,6 +2978,19 @@
+@@ -2863,6 +2975,19 @@
  
  				netif_wake_subqueue(netdev, j);
  			}
@@ -203,12 +211,12 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		}
  	}
  	q->txq_stopped = false;
-@@ -2985,6 +3105,19 @@
+@@ -2977,6 +3102,19 @@
  
  		if (skb) {
  			struct netdev_queue *txq;
 +
-+			if (skb->dev->netdev_ops == &airoha_netdev_ops) {
++			if (airoha_is_netdev(skb->dev)) {
 +				struct airoha_gdm_dev *owner = netdev_priv(skb->dev);
 +
 +				if (owner->flags & AIROHA_PRIV_F_PON) {
@@ -223,7 +231,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  			txq = skb_get_tx_queue(skb->dev, skb);
  			netdev_tx_completed_queue(txq, 1, skb->len);
-@@ -6707,7 +6840,12 @@
+@@ -6701,7 +6839,12 @@
  	 * xPON-managed GDM2 to run without either. In the latter case the xPON
  	 * provider owns carrier, speed and duplex.
  	 */
@@ -237,7 +245,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  					 dev->flags & AIROHA_PRIV_F_XPON_MANAGED);
  	if (err) {
  		netdev_err(netdev, "could not attach PHY: %d\n", err);
-@@ -6805,7 +6943,13 @@
+@@ -6799,7 +6942,13 @@
  		airoha_update_netdev_features(dev);
  	}
  
@@ -252,7 +260,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	if (err) {
  		netdev_err(netdev, "failed to start xPON provider: %d\n", err);
  		airoha_dev_stop(netdev);
-@@ -6822,7 +6966,10 @@
+@@ -6816,7 +6965,10 @@
  	bool econet = dev->common.family == AIROHA_ETH_FAMILY_ECONET;
  	struct airoha_qdma *qdma;
  
@@ -264,7 +272,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	netif_tx_disable(netdev);
  	qdma = airoha_qdma_deref(dev);
  
-@@ -7492,14 +7639,66 @@
+@@ -7486,14 +7638,66 @@
  	spin_unlock_bh(&dev->xpon_service_lock);
  }
  
@@ -332,10 +340,10 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	bool xpon_oam = ctrl || (xpon && xpon->oam);
 +	bool pon_data = !ctrl && (dev->flags & AIROHA_PRIV_F_PON);
 +	u32 pon_tag = 0;
- 	bool natflow;
  	u32 nr_frags, tag = 0, msg0, msg1, len;
  	struct airoha_queue_entry *e;
-@@ -7509,7 +7708,7 @@
+ 	struct airoha_qdma *qdma;
+@@ -7502,7 +7706,7 @@
  	LIST_HEAD(tx_list);
  	int i = 0, qid, chn;
  	u16 index, queue_mapping;
@@ -344,7 +352,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	/* The AN7563 vendor active-Ethernet path submits at least 64 bytes to
  	 * QDMA1. In particular, pad ARP/DHCP frames before they enter the PSE;
-@@ -7525,6 +7724,15 @@
+@@ -7518,6 +7722,15 @@
  
  	rcu_read_lock();
  	qdma = rcu_dereference(dev->qdma);
@@ -360,7 +368,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	if (!xpon && (dev->flags & AIROHA_PRIV_F_XPON_MANAGED) &&
  	    dev->xpon_mode == AIROHA_XPON_MODE_GPON) {
  		if (airoha_eth_xpon_classify(dev, skb, &classified))
-@@ -7547,6 +7755,8 @@
+@@ -7535,6 +7748,8 @@
  	txq = skb_get_tx_queue(netdev, skb);
  	nr_frags = 1 + skb_shinfo(skb)->nr_frags;
  	if (q->queued + nr_frags >= q->ndesc) {
@@ -369,7 +377,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		netif_tx_stop_queue(txq);
  		q->txq_stopped = true;
  		spin_unlock_bh(&q->lock);
-@@ -7558,7 +7768,34 @@
+@@ -7546,7 +7761,34 @@
  	/* Reserve ring space before changing the DSA header or TSO checksum.
  	 * A BUSY return must leave those fields intact for the next attempt.
  	 */
@@ -405,7 +413,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		if (!airoha_is(qdma->eth, airoha_en7523))
  			goto error_unlock;
  
-@@ -7622,13 +7859,16 @@
+@@ -7610,13 +7852,16 @@
  		       FIELD_PREP(QDMA_ETH_TXMSG_METER_MASK, 0x7f);
  	else
  		msg1 = FIELD_PREP(QDMA_ETH_TXMSG_NBOQ_MASK,
@@ -423,7 +431,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	if (xpon_oam)
  		msg1 |= QDMA_ETH_TXMSG_NO_DROP;
  
-@@ -7646,14 +7886,14 @@
+@@ -7634,14 +7879,14 @@
  			skb_frag_t *frag = &skb_shinfo(skb)->frags[i - 1];
  
  			len = skb_frag_size(frag);
@@ -441,7 +449,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  			goto error_unmap;
  
  		list_move_tail(&e->list, &tx_list);
-@@ -7683,7 +7923,20 @@
+@@ -7671,7 +7916,20 @@
  		i++;
  	}
  	q->queued += i;
@@ -463,7 +471,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	skb_tx_timestamp(skb);
  	netdev_tx_sent_queue(txq, skb->len);
  	if (q->ndesc - q->queued < q->free_thr) {
-@@ -7719,11 +7972,13 @@
+@@ -7707,11 +7965,13 @@
  error_unlock:
  	spin_unlock_bh(&q->lock);
  error:
@@ -478,7 +486,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	dev_kfree_skb_any(skb);
  	netdev->stats.tx_dropped++;
  	rcu_read_unlock();
-@@ -7739,7 +7994,7 @@
+@@ -7727,7 +7987,7 @@
  	if (airoha_has_legacy_qdma(dev->eth))
  		return econet_qdma_xmit(skb, netdev);
  
@@ -487,7 +495,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  }
  
  static int airoha_xpon_xmit_oam(struct net_device *netdev, struct sk_buff *skb,
-@@ -7768,7 +8023,7 @@
+@@ -7756,7 +8016,7 @@
  	 */
  	skb->dev = netdev;
  	skb_set_queue_mapping(skb, 7);
@@ -496,7 +504,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	return ret == NETDEV_TX_BUSY ? -EBUSY : 0;
  }
  
-@@ -7845,6 +8100,9 @@
+@@ -7833,6 +8093,9 @@
  	struct airoha_xpon_link_state state;
  	unsigned long flags;
  
@@ -506,7 +514,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	if (!(READ_ONCE(dev->flags) & AIROHA_PRIV_F_XPON_MANAGED))
  		return phylink_ethtool_ksettings_get(dev->common.phylink, cmd);
  
-@@ -7883,7 +8141,7 @@
+@@ -7871,7 +8134,7 @@
  {
  	struct airoha_gdm_dev *dev = netdev_priv(netdev);
  
@@ -515,7 +523,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	return phylink_ethtool_ksettings_set(dev->common.phylink, cmd);
-@@ -7893,7 +8151,7 @@
+@@ -7881,7 +8144,7 @@
  {
  	struct airoha_gdm_dev *dev = netdev_priv(netdev);
  
@@ -524,9 +532,9 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	return phylink_ethtool_nway_reset(dev->common.phylink);
-@@ -8802,6 +9060,255 @@
- 	.ndo_flow_offload	= airoha_ppe_natflow_offload,
- 	.ndo_flow_offload_check	= airoha_ppe_natflow_offload_check,
+@@ -8774,6 +9037,255 @@
+ 	.ndo_set_mac_address	= airoha_gdm_dev_set_macaddr,
+ 	.ndo_setup_tc		= airoha_gdm_dev_tc_setup,
  };
 +
 +static void airoha_pon_read_datapath_stats(
@@ -579,8 +587,8 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	struct airoha_gdm_dev *dev;
 +
 +	/* pon_netdev owns QDMA while control_netdev owns the control queue. */
-+	if (!pon_netdev || !control_netdev || !skb || !info ||
-+	    pon_netdev->netdev_ops != &airoha_netdev_ops)
++	if (!control_netdev || !skb || !info ||
++	    !airoha_is_netdev(pon_netdev))
 +		goto drop;
 +	dev = netdev_priv(pon_netdev);
 +	if (!(dev->flags & AIROHA_PRIV_F_PON) ||
@@ -613,7 +621,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	struct airoha_gdm_dev *dev;
 +	unsigned int i, j;
 +
-+	if (!netdev || netdev->netdev_ops != &airoha_netdev_ops)
++	if (!airoha_is_netdev(netdev))
 +		return -EINVAL;
 +	dev = netdev_priv(netdev);
 +	if (!(dev->flags & AIROHA_PRIV_F_PON))
@@ -687,7 +695,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	struct airoha_gdm_dev *dev;
 +	u32 value = 0;
 +
-+	if (!netdev || netdev->netdev_ops != &airoha_netdev_ops)
++	if (!airoha_is_netdev(netdev))
 +		return -EINVAL;
 +	dev = netdev_priv(netdev);
 +	if (!(dev->flags & AIROHA_PRIV_F_PON))
@@ -709,7 +717,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +{
 +	struct airoha_gdm_dev *dev;
 +
-+	if (!netdev || !stats || netdev->netdev_ops != &airoha_netdev_ops)
++	if (!stats || !airoha_is_netdev(netdev))
 +		return -EINVAL;
 +	dev = netdev_priv(netdev);
 +	if (!(dev->flags & AIROHA_PRIV_F_PON))
@@ -728,8 +736,8 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	struct airoha_gdm_dev *dev;
 +	int ret = 0;
 +
-+	if (!netdev || !ops || !ops->start || !ops->stop || !priv ||
-+	    netdev->netdev_ops != &airoha_netdev_ops)
++	if (!ops || !ops->start || !ops->stop || !priv ||
++	    !airoha_is_netdev(netdev))
 +		return -EINVAL;
 +	dev = netdev_priv(netdev);
 +	if (!(dev->flags & AIROHA_PRIV_F_PON))
@@ -758,7 +766,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +{
 +	struct airoha_gdm_dev *dev;
 +
-+	if (!netdev || netdev->netdev_ops != &airoha_netdev_ops)
++	if (!airoha_is_netdev(netdev))
 +		return;
 +	dev = netdev_priv(netdev);
 +	if (!(dev->flags & AIROHA_PRIV_F_PON))
@@ -780,7 +788,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  static const struct ethtool_ops airoha_ethtool_ops = {
  	.get_drvinfo		= airoha_eth_get_drvinfo,
-@@ -9136,6 +9643,15 @@
+@@ -9107,6 +9619,15 @@
  			dev->flags |= AIROHA_PRIV_F_WAN;
  	}
  
@@ -796,7 +804,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	if (of_property_read_bool(np, "airoha,xpon-managed")) {
  		dev->flags |= AIROHA_PRIV_F_XPON_MANAGED;
  		netdev->features |= NETIF_F_GRO_HW;
-@@ -9147,7 +9663,8 @@
+@@ -9118,7 +9639,8 @@
  	}
  	port->devs[index] = dev;
  
@@ -816,7 +824,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  #include <linux/debugfs.h>
  #include <linux/etherdevice.h>
  #include <linux/if_vlan.h>
-@@ -1001,6 +1002,7 @@
+@@ -993,6 +994,7 @@
  	AIROHA_PRIV_F_WAN = BIT(0),
  	AIROHA_PRIV_F_QOS = BIT(1),
  	AIROHA_PRIV_F_XPON_MANAGED = BIT(2),
@@ -824,7 +832,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  };
  
  #define AIROHA_XPON_OAM_RX_F_MIC_PRESENT	BIT(0)
-@@ -1079,6 +1081,50 @@
+@@ -1071,6 +1073,50 @@
  	bool oam;
  };
  
@@ -875,7 +883,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  struct airoha_gdm_dev {
  	/* Must stay first: shared GDM/phylink and PPE port metadata. */
  	struct airoha_gdm_common common;
-@@ -1103,6 +1149,12 @@
+@@ -1095,6 +1141,12 @@
  
  	u32 flags;
  	int nbq;
@@ -888,6 +896,19 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	struct airoha_hw_stats stats;
  
+--- a/drivers/net/ethernet/airoha/airoha_ppe.c
++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
+@@ -878,6 +878,10 @@
+ 
+ 			if (!eth->ppe_host_ops->is_valid_gdm_dev(eth, dev))
+ 				return -EINVAL;
++
++			/* PON bearer metadata is added by the dedicated PPE adapter. */
++			if (dev->flags & AIROHA_PRIV_F_PON)
++				return -EOPNOTSUPP;
+ 
+ 			port = dev->port;
+ 			if (!port) {
 --- a/drivers/net/ethernet/airoha/airoha_regs.h
 +++ b/drivers/net/ethernet/airoha/airoha_regs.h
 @@ -1038,6 +1038,13 @@
@@ -1012,16 +1033,3 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +					  void *priv);
 +
 +#endif
---- a/drivers/net/ethernet/airoha/airoha_ppe.c
-+++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -899,6 +899,10 @@
- 
- 			if (!eth->ppe_host_ops->is_valid_gdm_dev(eth, dev))
- 				return -EINVAL;
-+
-+			/* PON bearer metadata is added by the dedicated PPE adapter. */
-+			if (dev->flags & AIROHA_PRIV_F_PON)
-+				return -EOPNOTSUPP;
- 
- 			port = dev->port;
- 			if (!port) {

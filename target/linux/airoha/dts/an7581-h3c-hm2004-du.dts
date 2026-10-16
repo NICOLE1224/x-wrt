@@ -98,6 +98,7 @@
 			color = <LED_COLOR_ID_GREEN>;
 			function = LED_FUNCTION_WLAN;
 			gpios = <&en7581_pinctrl 15 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "phy0radio";
 		};
 
 		led-usb {

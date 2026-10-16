@@ -1,15 +1,15 @@
-From: PTPT52.AI <ptpt52@gmail.com>
+From: Chen Minqiang <ptpt52@gmail.com>
 Subject: [PATCH] net: airoha: retain PON control queue owners until TX completion
 
 A control netdev can be removed while another GDM still uses the shared
 QDMA. Keep its BQL queue owner alive until completion or ring cleanup.
 Acquire the reference after DMA mapping succeeds, once per control skb.
 
-Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
+Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2996,6 +2996,14 @@
+@@ -2993,6 +2993,14 @@
  	q->txq_stopped = false;
  }
  
@@ -24,7 +24,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  void
  airoha_qdma_unmap_tx_entry(struct airoha_eth *eth,
  			   struct airoha_queue_entry *e)
-@@ -3123,6 +3131,7 @@
+@@ -3120,6 +3128,7 @@
  			netdev_tx_completed_queue(txq, 1, skb->len);
  			dev_kfree_skb_any(skb);
  		}
@@ -32,7 +32,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  		if (q->txq_stopped && q->ndesc - q->queued >= q->free_thr) {
  			/* Since multiple net_device TX queues can share the
-@@ -3282,6 +3291,7 @@
+@@ -3279,6 +3288,7 @@
  			netdev_tx_completed_queue(txq, 1, skb->len);
  			dev_kfree_skb_any(skb);
  		}
@@ -40,7 +40,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		e->skb = NULL;
  		list_add_tail(&e->list, &q->tx_list);
  
-@@ -7923,6 +7933,14 @@
+@@ -7916,6 +7926,14 @@
  		i++;
  	}
  	q->queued += i;
@@ -57,7 +57,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -416,6 +416,7 @@
+@@ -412,6 +412,7 @@
  		struct {
  			struct list_head list;
  			struct sk_buff *skb;

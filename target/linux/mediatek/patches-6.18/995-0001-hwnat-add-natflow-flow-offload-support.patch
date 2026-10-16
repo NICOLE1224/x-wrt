@@ -12,28 +12,34 @@ Support the YT922x four-byte tag using the full 16-bit port control word
 as the outer VLAN TCI. Reject native eight-byte tags and VLAN-filtering
 ports whose access PVID policy cannot be reproduced by this PPE path.
 
+Return a drop indication for WED PPE keepalive and sampling copies so
+mt76 consumes them after accounting. Validate the PPE bank and hash
+before reading counters. Keep WED RX to software-only external outputs
+in software because that path has no natflow translated-packet handoff.
+
 Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
- drivers/net/ethernet/mediatek/Makefile           |   2 +-
- drivers/net/ethernet/mediatek/mtk_eth_soc.c      | 180 +++-
- drivers/net/ethernet/mediatek/mtk_eth_soc.h      |  37 +
- drivers/net/ethernet/mediatek/mtk_ppe.h          |  47 +-
- drivers/net/ethernet/mediatek/mtk_ppe1.c         | 906 ++++++++++++++++++++
- .../net/ethernet/mediatek/mtk_ppe_debugfs.c      |   9 +-
- .../net/ethernet/mediatek/mtk_ppe_offload1.c     | 707 +++++++++++++++++
- drivers/net/ethernet/mediatek/mtk_ppe_regs.h     |  13 +
- drivers/net/ethernet/mediatek/mtk_wed.c          |  56 +-
- drivers/net/ethernet/mediatek/mtk_wed.h          |   5 +
- drivers/net/ppp/ppp_generic.c                    |  32 +
- drivers/net/ppp/pppoe.c                          |  23 +
- include/linux/netdevice.h                        |  24 +
- include/linux/ppp_channel.h                      |   1 +
- include/net/netfilter/nf_flow_table.h            |  57 ++
- net/8021q/vlan_dev.c                             |  19 +
- net/bridge/br_device.c                           |  22 +
- net/core/dev.c                                   |   6 +
- net/dsa/user.c                                   |  46 ++
- 19 files changed, 2142 insertions(+), 50 deletions(-)
+ drivers/net/ethernet/mediatek/Makefile           |    2
+ drivers/net/ethernet/mediatek/mtk_eth_soc.c      |  180 ++++
+ drivers/net/ethernet/mediatek/mtk_eth_soc.h      |   37 +
+ drivers/net/ethernet/mediatek/mtk_ppe.h          |   47 +
+ drivers/net/ethernet/mediatek/mtk_ppe1.c         |  906 ++++++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c  |    9
+ drivers/net/ethernet/mediatek/mtk_ppe_offload1.c |  736 ++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe_regs.h     |   13
+ drivers/net/ethernet/mediatek/mtk_wed.c          |   65 +-
+ drivers/net/ethernet/mediatek/mtk_wed.h          |    5
+ drivers/net/ppp/ppp_generic.c                    |   32 +
+ drivers/net/ppp/pppoe.c                          |   23 +
+ include/linux/netdevice.h                        |   24 +
+ include/linux/ppp_channel.h                      |    1
+ include/linux/soc/mediatek/mtk_wed.h             |    7
+ include/net/netfilter/nf_flow_table.h            |   57 +
+ net/8021q/vlan_dev.c                             |   19
+ net/bridge/br_device.c                           |   22 +
+ net/core/dev.c                                   |    6
+ net/dsa/user.c                                   |   46 +
+ 20 files changed, 2182 insertions(+), 55 deletions(-)
  create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe1.c
  create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
 
@@ -1526,7 +1532,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return 0;
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-@@ -0,0 +1,707 @@
+@@ -0,0 +1,736 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + *  Copyright (C) 2020 Felix Fietkau <nbd@nbd.name>
@@ -1736,6 +1742,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	int pse_port = PSE_GDM1_PORT;
 +	u16 dsa_port, dsa_vid;
 +	int err;
++#ifdef CONFIG_NET_MEDIATEK_SOC_WED
++	bool wed_src = false;
++#endif
 +
 +	err = mtk_offload_get_dsa_info(dest, &dsa_port, &dsa_vid, &dsa_proto);
 +	if (err)
@@ -1772,6 +1781,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		struct mtk_wdma_info info = {};
 +
 +		if (mtk_flow_get_wdma_info(src->dev, src->eth_dest, &info) == 0) {
++			wed_src = true;
++			if (mtk_is_netsys_v2_or_greater(eth) &&
++			    info.wdma_idx >= eth->soc->ppe_num)
++				return -EOPNOTSUPP;
 +			*ppe_idx = 0;
 +			if (mtk_is_netsys_v2_or_greater(eth)) {
 +				switch (info.wdma_idx) {
@@ -1817,6 +1830,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				return err;
 +		}
 +	}
++	/* WED RX has no natflow FORCE_CPU handoff. Keep mixed external paths
++	 * in software instead of delivering already translated packets as RX.
++	 */
++	if (wed_src && pse_port == PSE_ADMA_PORT)
++		return -EOPNOTSUPP;
 +#endif
 +
 +	if (dsa_port != 0xffff) {
@@ -1864,6 +1882,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	int pse_port = PSE_GDM1_PORT;
 +	u16 dsa_port, dsa_vid;
 +	int err;
++#ifdef CONFIG_NET_MEDIATEK_SOC_WED
++	bool wed_src = false;
++#endif
 +
 +	err = mtk_offload_get_dsa_info(dest, &dsa_port, &dsa_vid, &dsa_proto);
 +	if (err)
@@ -1897,6 +1918,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		struct mtk_wdma_info info = {};
 +
 +		if (mtk_flow_get_wdma_info(src->dev, src->eth_dest, &info) == 0) {
++			wed_src = true;
++			if (mtk_is_netsys_v2_or_greater(eth) &&
++			    info.wdma_idx >= eth->soc->ppe_num)
++				return -EOPNOTSUPP;
 +			*ppe_idx = 0;
 +			if (mtk_is_netsys_v2_or_greater(eth)) {
 +				switch (info.wdma_idx) {
@@ -1942,6 +1967,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				return err;
 +		}
 +	}
++	/* WED RX has no natflow FORCE_CPU handoff. Keep mixed external paths
++	 * in software instead of delivering already translated packets as RX.
++	 */
++	if (wed_src && pse_port == PSE_ADMA_PORT)
++		return -EOPNOTSUPP;
 +#endif
 +
 +	if (dsa_port != 0xffff) {
@@ -2105,6 +2135,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +{
 +	void *flow_func;
 +
++	if (ppe_idx < 0 || ppe_idx >= ARRAY_SIZE(eth->ppe) ||
++	    ppe_idx >= eth->soc->ppe_num || !eth->ppe[ppe_idx] ||
++	    hash >= MTK_PPE_ENTRIES)
++		return;
++
 +	rcu_read_lock();
 +	flow_func = rcu_dereference(eth->flow_func);
 +	if (flow_func) {
@@ -2265,30 +2300,46 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #endif
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
-@@ -1982,13 +1982,21 @@ mtk_wed_ppe_check(struct mtk_wed_device
- 	if (!skb)
- 		return;
+@@ -1972,7 +1972,7 @@
+ 	return 0;
+ }
  
+-static void
++static bool
+ mtk_wed_ppe_check(struct mtk_wed_device *dev, struct sk_buff *skb,
+ 		  u32 reason, u32 hash)
+ {
+@@ -1980,15 +1980,26 @@
+ 	struct ethhdr *eh;
+ 
+ 	if (!skb)
+-		return;
++		return false;
++
 +	switch (reason) {
 +	case MTK_PPE_CPU_REASON_KEEPALIVE_UC_OLD_HDR:
 +	case MTK_PPE_CPU_REASON_KEEPALIVE_MC_NEW_HDR:
 +	case MTK_PPE_CPU_REASON_KEEPALIVE_DUP_OLD_HDR:
 +		mtk_offload_keepalive(eth, dev->hw->index, hash);
-+		break;
++		return true;
++	case MTK_PPE_CPU_REASON_PACKET_SAMPLING:
++		return true;
 +	}
-+
+ 
  	if (reason != MTK_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
- 		return;
+-		return;
++		return false;
  
  	skb_set_mac_header(skb, 0);
  	eh = eth_hdr(skb);
  	skb->protocol = eh->h_proto;
 -	mtk_ppe_check_skb(eth->ppe[dev->hw->index], skb, hash);
 +	//mtk_ppe_check_skb(eth->ppe[dev->hw->index], skb, hash);
++	return false;
  }
  
  static void
-@@ -2674,6 +2682,33 @@ out:
+@@ -2674,6 +2685,33 @@ out:
  	return ret;
  }
  
@@ -2322,7 +2373,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  void mtk_wed_flow_remove(int index)
  {
  	struct mtk_wed_hw *hw = hw_list[index];
-@@ -2696,6 +2731,7 @@ out:
+@@ -2696,6 +2734,7 @@ out:
  	mutex_unlock(&hw_lock);
  }
  
@@ -2330,7 +2381,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static int
  mtk_wed_setup_tc_block_cb(enum tc_setup_type type, void *type_data, void *cb_priv)
  {
-@@ -2789,6 +2825,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
+@@ -2789,6 +2828,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
  	default:
  		return -EOPNOTSUPP;
  	}
@@ -2523,6 +2574,36 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  };
  
  struct ppp_channel {
+--- a/include/linux/soc/mediatek/mtk_wed.h
++++ b/include/linux/soc/mediatek/mtk_wed.h
+@@ -7,6 +7,9 @@
+ #include <linux/pci.h>
+ #include <linux/skbuff.h>
+ #include <linux/netdevice.h>
++
++/* ppe_check returns true for control copies the caller must drop. */
++#define MTK_WED_PPE_CHECK_RETURNS_BOOL
+ 
+ #define MTK_WED_TX_QUEUES		2
+ #define MTK_WED_RX_QUEUES		2
+@@ -203,7 +206,7 @@
+ 	int (*msg_update)(struct mtk_wed_device *dev, int cmd_id,
+ 			  void *data, int len);
+ 	void (*detach)(struct mtk_wed_device *dev);
+-	void (*ppe_check)(struct mtk_wed_device *dev, struct sk_buff *skb,
++	bool (*ppe_check)(struct mtk_wed_device *dev, struct sk_buff *skb,
+ 			  u32 reason, u32 hash);
+ 
+ 	void (*stop)(struct mtk_wed_device *dev);
+@@ -319,7 +322,7 @@
+ #define mtk_wed_device_irq_get(_dev, _mask) 0
+ #define mtk_wed_device_irq_set_mask(_dev, _mask) do {} while (0)
+ #define mtk_wed_device_rx_ring_setup(_dev, _ring, _regs, _reset) -ENODEV
+-#define mtk_wed_device_ppe_check(_dev, _skb, _reason, _hash)  do {} while (0)
++#define mtk_wed_device_ppe_check(_dev, _skb, _reason, _hash) false
+ #define mtk_wed_device_update_msg(_dev, _id, _msg, _len) -ENODEV
+ #define mtk_wed_device_stop(_dev) do {} while (0)
+ #define mtk_wed_device_dma_reset(_dev) do {} while (0)
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
 @@ -188,6 +188,63 @@ struct flow_offload {
