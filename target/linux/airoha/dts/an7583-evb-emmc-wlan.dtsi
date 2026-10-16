@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 
-#include "an7583-evb-emmc.dts"
+#include "an7583-evb-emmc.dtso"
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/en7523-clk.h>
+#include <dt-bindings/reset/airoha,an7583-reset.h>
 #include "an7583-pcie-gen3.dtsi"
 #include "an7583-npu-wlan.dtsi"
 

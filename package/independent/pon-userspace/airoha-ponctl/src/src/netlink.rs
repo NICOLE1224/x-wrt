@@ -101,6 +101,12 @@ pub struct LineState {
     pub active: Option<LineMode>,
 }
 
+impl LineState {
+    pub fn effective_mode(&self) -> LineMode {
+        self.active.unwrap_or(self.configured)
+    }
+}
+
 struct NetlinkSocket(c_int);
 
 impl Drop for NetlinkSocket {
@@ -478,4 +484,27 @@ pub fn get_status(ifindex: u32) -> io::Result<crate::status::Snapshot> {
 
     crate::status::convert_optics(&mut snapshot);
     Ok(snapshot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effective_mode_keeps_the_active_line_until_restart() {
+        let state = LineState {
+            configured: LineMode::Xgpon,
+            active: Some(LineMode::Epon10g1g),
+        };
+        assert_eq!(state.effective_mode(), LineMode::Epon10g1g);
+    }
+
+    #[test]
+    fn effective_mode_uses_configuration_before_the_line_starts() {
+        let state = LineState {
+            configured: LineMode::Epon10g1g,
+            active: None,
+        };
+        assert_eq!(state.effective_mode(), LineMode::Epon10g1g);
+    }
 }

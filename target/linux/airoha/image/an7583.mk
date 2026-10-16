@@ -27,45 +27,34 @@ define Device/FitImageLzma
   KERNEL_NAME := Image
 endef
 
-define Device/airoha_an7583-evb
+define Device/airoha_an7583-evb-multievb
   $(call Device/FitImageLzma)
   DEVICE_VENDOR := Airoha
-  DEVICE_MODEL := AN7583 Evaluation Board (SNAND)
+  DEVICE_MODEL := AN7583 Evaluation Board (Multi-evb)
   DEVICE_PACKAGES := aeonsemi-as21xxx-firmware kmod-leds-pwm \
-	kmod-pwm-airoha kmod-input-gpio-keys-polled
-  DEVICE_DTS := an7583-evb
-  DEVICE_DTS_CONFIG := config@1
+	kmod-pwm-airoha kmod-input-gpio-keys-polled kmod-phy-airoha-en8811h
+  DEVICE_DTS := an7583-evb-multievb
+  DEVICE_DTS_OVERLAY := an7583-evb an7583-evb-emmc
   IMAGE/sysupgrade.bin := append-kernel | pad-to 128k | append-rootfs | \
 	pad-rootfs | append-metadata
   ARTIFACT/preloader.bin := an7583-preloader rfb
   ARTIFACT/bl31-uboot.fip := an7583-bl31-uboot rfb
   ARTIFACTS := preloader.bin bl31-uboot.fip
 endef
-TARGET_DEVICES += airoha_an7583-evb
-
-define Device/airoha_an7583-evb-emmc
-  DEVICE_VENDOR := Airoha
-  DEVICE_MODEL := AN7583 Evaluation Board (EMMC)
-  DEVICE_DTS := an7583-evb-emmc
-  DEVICE_PACKAGES := kmod-phy-airoha-en8811h
-  ARTIFACT/preloader.bin := an7583-preloader rfb
-  ARTIFACT/bl31-uboot.fip := an7583-bl31-uboot rfb
-  ARTIFACTS := preloader.bin bl31-uboot.fip
-endef
-TARGET_DEVICES += airoha_an7583-evb-emmc
+TARGET_DEVICES += airoha_an7583-evb-multievb
 
 define Device/airoha_an7583-evb-emmc-kite
-  $(call Device/airoha_an7583-evb-emmc)
+  $(call Device/airoha_an7583-evb-multievb)
   DEVICE_MODEL := AN7583 Evaluation Board (eMMC + MT7992)
-  DEVICE_DTS := an7583-evb-emmc-kite
+  DEVICE_DTS_OVERLAY := an7583-evb-emmc-kite
   DEVICE_PACKAGES += kmod-mt7992-firmware wpad-basic-mbedtls
 endef
 TARGET_DEVICES += airoha_an7583-evb-emmc-kite
 
 define Device/airoha_an7583-evb-emmc-eagle
-  $(call Device/airoha_an7583-evb-emmc)
+  $(call Device/airoha_an7583-evb-multievb)
   DEVICE_MODEL := AN7583 Evaluation Board (eMMC + MT7996)
-  DEVICE_DTS := an7583-evb-emmc-eagle
+  DEVICE_DTS_OVERLAY := an7583-evb-emmc-eagle
   DEVICE_PACKAGES += kmod-mt7996-firmware wpad-basic-mbedtls
 endef
 TARGET_DEVICES += airoha_an7583-evb-emmc-eagle

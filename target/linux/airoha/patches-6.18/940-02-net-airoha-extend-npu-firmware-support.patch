@@ -12,17 +12,26 @@ Retain Linux 6.18.55 managed watchdog-work cancellation on probe
 failure and detach. Restore the driver remove callback for deferred
 firmware-start work and debugfs cleanup.
 
+Keep the stable NPU DT compatibles and the V2 interrupt ABI (mailbox,
+eight watchdogs, six WLAN IRQs). Constrain V2 streaming mappings and
+coherent allocations to separate reserved pools in the first GiB of
+DRAM, and reject firmware, WLAN and PPE buffers outside that window.
+The coherent pool also supports MT7992 descriptor allocations larger
+than SWIOTLB's per-allocation limit; exhaustion has no global fallback.
+
+Link: https://lore.kernel.org/r/atCRsquzA1UxSpCc@mediatek.com
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_npu.c
 +++ b/drivers/net/ethernet/airoha/airoha_npu.c
-@@ -4,17 +4,24 @@
+@@ -4,17 +4,26 @@
   * Author: Lorenzo Bianconi <lorenzo@kernel.org>
   */
  
 +#include <linux/debugfs.h>
  #include <linux/devcoredump.h>
  #include <linux/devm-helpers.h>
++#include <linux/dma-mapping.h>
  #include <linux/firmware.h>
 +#include <linux/mfd/syscon.h>
  #include <linux/platform_device.h>
@@ -31,6 +40,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  #include <linux/of_reserved_mem.h>
  #include <linux/regmap.h>
 +#include <linux/seq_file.h>
++#include <linux/swiotlb.h>
 +#include <linux/xarray.h>
 +#include <linux/workqueue.h>
  
@@ -41,7 +51,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  #define NPU_EN7581_FIRMWARE_DATA		"airoha/en7581_npu_data.bin"
  #define NPU_EN7581_FIRMWARE_RV32		"airoha/en7581_npu_rv32.bin"
  #define NPU_EN7581_7996_FIRMWARE_DATA		"airoha/en7581_MT7996_npu_data.bin"
-@@ -24,6 +31,8 @@
+@@ -24,23 +33,23 @@
  #define NPU_EN7581_FIRMWARE_RV32_MAX_SIZE	0x200000
  #define NPU_EN7581_FIRMWARE_DATA_MAX_SIZE	0x10000
  #define NPU_DUMP_SIZE				512
@@ -50,7 +60,11 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  /*
   * Mailbox DMA payload size. Covers sizeof(struct ppe_mbox_data) (28) and
   * WLAN TLV messages (header + payload); largest in-tree WLAN payload today
-@@ -33,14 +42,10 @@
+  * is 16 bytes (INODE_TXRX_REG_ADDR). Keep headroom for future commands.
+  */
+ #define AIROHA_NPU_MBOX_SIZE			256
++#define NPU_V2_DRAM_START			0x80000000ULL
++#define NPU_V2_DRAM_END				0xbfffffffULL
  
  #define REG_NPU_LOCAL_SRAM		0x0
  
@@ -69,7 +83,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  #define NPU_MBOX_BASE_ADDR		0x30c000
  
-@@ -60,13 +65,13 @@
+@@ -60,13 +69,13 @@
  
  #define REG_TX_BASE(_n)			(NPU_WLAN_BASE_ADDR + ((_n) << 4) + 0x080)
  #define REG_TX_DSCP_NUM(_n)		(NPU_WLAN_BASE_ADDR + ((_n) << 4) + 0x084)
@@ -87,7 +101,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  #define NPU_TIMER_BASE_ADDR		0x310100
  #define REG_WDT_TIMER_CTRL(_n)		(NPU_TIMER_BASE_ADDR + ((_n) * 0x100))
-@@ -120,10 +125,36 @@ struct airoha_npu_fw {
+@@ -120,10 +129,44 @@ struct airoha_npu_fw {
  };
  
  struct airoha_npu_soc_data {
@@ -103,8 +117,8 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +
 +	const u32 wlan_func_set[WLAN_FUNC_SET_WAIT_MAX];
 +	const u32 wlan_func_get[WLAN_FUNC_GET_WAIT_MAX];
-+};
-+
+ };
+ 
 +struct airoha_npu_priv {
 +	struct airoha_npu npu;
 +	struct reserved_mem *rmem;
@@ -114,17 +128,25 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	struct mutex start_lock;
 +	struct delayed_work start_work;
 +	bool started;
- };
- 
++};
++
 +static struct airoha_npu_priv *airoha_npu_to_priv(struct airoha_npu *npu)
 +{
 +	return container_of(npu, struct airoha_npu_priv, npu);
 +}
 +
++static bool airoha_npu_dma_range_valid(struct airoha_npu *npu, u64 start,
++				       u64 size)
++{
++	return npu->soc_data->version != NPU_V2 ||
++	       (size && start >= NPU_V2_DRAM_START &&
++		start <= NPU_V2_DRAM_END && size - 1 <= NPU_V2_DRAM_END - start);
++}
++
  #define MBOX_MSG_FUNC_ID	GENMASK(14, 11)
  #define MBOX_MSG_STATIC_BUF	BIT(5)
  #define MBOX_MSG_STATUS		GENMASK(4, 2)
-@@ -167,6 +198,67 @@ struct wlan_mbox_data {
+@@ -167,6 +210,67 @@ struct wlan_mbox_data {
  	DECLARE_FLEX_ARRAY(u8, d);
  };
  
@@ -192,7 +214,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  static int __airoha_npu_send_msg(struct airoha_npu *npu, int func_id,
  				 const void *data, int len, void *reply,
  				 u16 reply_len)
-@@ -181,6 +273,11 @@ static int __airoha_npu_send_msg(struct
+@@ -181,6 +285,11 @@ static int __airoha_npu_send_msg(struct
  	if (reply && reply_len > len)
  		return -EINVAL;
  
@@ -204,7 +226,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	/*
  	 * Mailbox payloads are bidirectional (CPU request, NPU response).
  	 * On EN7581+MT7996, streaming DMA_BIDIRECTIONAL against the
-@@ -203,9 +300,18 @@ static int __airoha_npu_send_msg(struct
+@@ -203,9 +312,18 @@ static int __airoha_npu_send_msg(struct
  	ret = regmap_read_poll_timeout_atomic(npu->regmap,
  					      REG_CR_MBQ0_CTRL(3) + offset,
  					      val, (val & MBOX_MSG_DONE),
@@ -225,7 +247,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	/* Copy the trailing reply_len bytes of the response. */
  	if (!ret && reply)
-@@ -213,6 +319,15 @@ static int __airoha_npu_send_msg(struct
+@@ -213,6 +331,15 @@ static int __airoha_npu_send_msg(struct
  
  	spin_unlock_bh(&core->lock);
  
@@ -241,7 +263,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	return ret;
  }
  
-@@ -271,28 +386,23 @@ airoha_npu_load_firmware_from_dts(struct
+@@ -271,28 +398,23 @@ airoha_npu_load_firmware_from_dts(struct
  }
  
  static int airoha_npu_run_firmware(struct device *dev, void __iomem *base,
@@ -273,7 +295,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  				       soc->fw_rv32.max_size);
  	if (ret)
  		return ret;
-@@ -307,6 +417,8 @@ static irqreturn_t airoha_npu_mbox_handl
+@@ -307,6 +429,8 @@ static irqreturn_t airoha_npu_mbox_handl
  {
  	struct airoha_npu *npu = npu_instance;
  
@@ -282,7 +304,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	/* clear mbox interrupt status */
  	regmap_write(npu->regmap, REG_CR_MBOX_INT_STATUS,
  		     MBOX_INT_STATUS_MASK);
-@@ -334,7 +446,7 @@ static void airoha_npu_wdt_work(struct w
+@@ -334,7 +458,7 @@ static void airoha_npu_wdt_work(struct w
  		return;
  
  	c = core - &npu->cores[0];
@@ -291,7 +313,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	snprintf(dump, NPU_DUMP_SIZE, "PC: %08x SP: %08x LR: %08x\n",
  		 val[0], val[1], val[2]);
  
-@@ -348,6 +460,8 @@ static irqreturn_t airoha_npu_wdt_handle
+@@ -348,6 +472,8 @@ static irqreturn_t airoha_npu_wdt_handle
  	int c = core - &npu->cores[0];
  	u32 val;
  
@@ -300,7 +322,38 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	regmap_set_bits(npu->regmap, REG_WDT_TIMER_CTRL(c), WDT_INTR_MASK);
  	if (!regmap_read(npu->regmap, REG_WDT_TIMER_CTRL(c), &val) &&
  	    FIELD_GET(WDT_EN_MASK, val))
-@@ -493,6 +607,12 @@ static int airoha_npu_wlan_msg_send(stru
+@@ -403,6 +529,10 @@ static int airoha_npu_ppe_flush_sram_ent
+ 	struct ppe_mbox_data *ppe_data;
+ 	int err;
+ 
++	if (!airoha_npu_dma_range_valid(npu, foe_addr,
++					(u64)sram_num_entries * AIROHA_FOE_ENTRY_SIZE))
++		return -ERANGE;
++
+ 	ppe_data = kzalloc(sizeof(*ppe_data), GFP_KERNEL);
+ 	if (!ppe_data)
+ 		return -ENOMEM;
+@@ -427,6 +557,9 @@ static int airoha_npu_foe_commit_entry(s
+ 	struct ppe_mbox_data *ppe_data;
+ 	int err;
+ 
++	if (!airoha_npu_dma_range_valid(npu, foe_addr, entry_size))
++		return -ERANGE;
++
+ 	ppe_data = kzalloc(sizeof(*ppe_data), GFP_ATOMIC);
+ 	if (!ppe_data)
+ 		return -ENOMEM;
+@@ -462,6 +595,9 @@ static int airoha_npu_ppe_stats_setup(st
+ 	int err, size = num_stats_entries * sizeof(*npu->stats);
+ 	struct ppe_mbox_data *ppe_data;
+ 
++	if (!airoha_npu_dma_range_valid(npu, foe_stats_addr, size))
++		return -ERANGE;
++
+ 	ppe_data = kzalloc(sizeof(*ppe_data), GFP_ATOMIC);
+ 	if (!ppe_data)
+ 		return -ENOMEM;
+@@ -493,6 +629,12 @@ static int airoha_npu_wlan_msg_send(stru
  	struct wlan_mbox_data *wlan_data;
  	int err, len;
  
@@ -313,7 +366,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	len = sizeof(*wlan_data) + data_len;
  	wlan_data = kzalloc(len, gfp);
  	if (!wlan_data)
-@@ -516,6 +636,12 @@ static int airoha_npu_wlan_msg_get(struc
+@@ -516,6 +658,12 @@ static int airoha_npu_wlan_msg_get(struc
  	struct wlan_mbox_data *wlan_data;
  	int err, len;
  
@@ -326,7 +379,18 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	len = sizeof(*wlan_data) + data_len;
  	wlan_data = kzalloc(len, gfp);
  	if (!wlan_data)
-@@ -554,29 +680,32 @@ airoha_npu_wlan_set_reserved_memory(stru
+@@ -546,6 +694,10 @@ airoha_npu_wlan_set_reserved_memory(stru
+ 							&res);
+ 	if (err)
+ 		return err;
++	if (!airoha_npu_dma_range_valid(npu, res.start, resource_size(&res)))
++		return dev_err_probe(dev, -ERANGE,
++				     "NPU memory region %s is outside its DRAM window\n",
++				     name);
+ 
+ 	val = res.start;
+ 	return airoha_npu_wlan_msg_send(npu, ifindex, func_id, &val,
+@@ -554,29 +706,32 @@ airoha_npu_wlan_set_reserved_memory(stru
  
  static int airoha_npu_wlan_init_memory(struct airoha_npu *npu)
  {
@@ -371,7 +435,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	if (of_property_match_string(npu->dev->of_node, "memory-region-names",
  				     "ba") >= 0) {
-@@ -587,8 +716,12 @@ static int airoha_npu_wlan_init_memory(s
+@@ -587,8 +742,12 @@ static int airoha_npu_wlan_init_memory(s
  	}
  
  	cmd = WLAN_FUNC_SET_WAIT_IS_FORCE_TO_CPU;
@@ -385,7 +449,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  }
  
  static u32 airoha_npu_wlan_queue_addr_get(struct airoha_npu *npu, int qid,
-@@ -623,6 +756,645 @@ static void airoha_npu_wlan_irq_disable(
+@@ -623,6 +782,645 @@ static void airoha_npu_wlan_irq_disable(
  	regmap_clear_bits(npu->regmap, REG_IRQ_RXDONE(q), NPU_IRQ_RX_MASK(q));
  }
  
@@ -1031,7 +1095,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  struct airoha_npu *airoha_npu_get(struct device *dev)
  {
  	struct platform_device *pdev;
-@@ -650,7 +1422,13 @@ struct airoha_npu *airoha_npu_get(struct
+@@ -650,7 +1448,13 @@ struct airoha_npu *airoha_npu_get(struct
  
  	npu = platform_get_drvdata(pdev);
  	if (!npu) {
@@ -1046,7 +1110,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		goto error_module_put;
  	}
  
-@@ -680,7 +1458,139 @@ void airoha_npu_put(struct airoha_npu *n
+@@ -680,7 +1484,139 @@ void airoha_npu_put(struct airoha_npu *n
  }
  EXPORT_SYMBOL_GPL(airoha_npu_put);
  
@@ -1186,7 +1250,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	.fw_rv32 = {
  		.name = NPU_EN7581_FIRMWARE_RV32,
  		.max_size = NPU_EN7581_FIRMWARE_RV32_MAX_SIZE,
-@@ -689,9 +1599,63 @@ static const struct airoha_npu_soc_data
+@@ -689,9 +1625,63 @@ static const struct airoha_npu_soc_data
  		.name = NPU_EN7581_FIRMWARE_DATA,
  		.max_size = NPU_EN7581_FIRMWARE_DATA_MAX_SIZE,
  	},
@@ -1250,7 +1314,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	.fw_rv32 = {
  		.name = NPU_AN7583_FIRMWARE_RV32,
  		.max_size = NPU_EN7581_FIRMWARE_RV32_MAX_SIZE,
-@@ -700,11 +1664,61 @@ static const struct airoha_npu_soc_data
+@@ -700,9 +1690,59 @@ static const struct airoha_npu_soc_data
  		.name = NPU_AN7583_FIRMWARE_DATA,
  		.max_size = NPU_EN7581_FIRMWARE_DATA_MAX_SIZE,
  	},
@@ -1306,15 +1370,11 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  };
  
  static const struct of_device_id of_airoha_npu_match[] = {
--	{ .compatible = "airoha,en7581-npu", .data = &en7581_npu_soc_data },
--	{ .compatible = "airoha,an7583-npu", .data = &an7583_npu_soc_data },
-+	{ .compatible = "airoha,airoha_en7523-npu", .data = &en7523_npu_soc_data },
-+	{ .compatible = "airoha,airoha_en7581-npu", .data = &en7581_npu_soc_data },
-+	{ .compatible = "airoha,airoha_an7583-npu", .data = &an7583_npu_soc_data },
++	{ .compatible = "airoha,en7523-npu", .data = &en7523_npu_soc_data },
+ 	{ .compatible = "airoha,en7581-npu", .data = &en7581_npu_soc_data },
+ 	{ .compatible = "airoha,an7583-npu", .data = &an7583_npu_soc_data },
  	{ /* sentinel */ }
- };
- MODULE_DEVICE_TABLE(of, of_airoha_npu_match);
-@@ -717,23 +1731,159 @@ static const struct regmap_config regmap
+@@ -717,24 +1757,239 @@ static const struct regmap_config regmap
  	.disable_locking	= true,
  };
  
@@ -1444,6 +1504,77 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +}
 +EXPORT_SYMBOL_GPL(airoha_npu_start);
 +
++static struct reserved_mem *
++airoha_npu_dma_pool(struct airoha_npu *npu, const char *name,
++		    const char *compatible)
++{
++	struct device *dev = npu->dev;
++	struct reserved_mem *rmem;
++	struct device_node *np;
++	int index;
++
++	index = of_property_match_string(dev->of_node, "memory-region-names", name);
++	if (index < 0)
++		return ERR_PTR(index);
++	np = of_parse_phandle(dev->of_node, "memory-region", index);
++	if (!np)
++		return ERR_PTR(-ENODEV);
++	if (!of_device_is_available(np) ||
++	    !of_device_is_compatible(np, compatible) ||
++	    of_property_read_bool(np, "reusable")) {
++		of_node_put(np);
++		return ERR_PTR(-EINVAL);
++	}
++	rmem = of_reserved_mem_lookup(np);
++	of_node_put(np);
++	if (!rmem || !airoha_npu_dma_range_valid(npu, rmem->base, rmem->size))
++		return ERR_PTR(-ERANGE);
++
++	return rmem;
++}
++
++static void airoha_npu_dma_release(void *data)
++{
++	of_reserved_mem_device_release(data);
++}
++
++static int airoha_npu_init_dma(struct airoha_npu *npu)
++{
++	struct device *dev = npu->dev;
++	struct reserved_mem *rmem;
++	int err;
++
++	err = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++	if (err)
++		return dev_err_probe(dev, err, "No usable DMA configuration\n");
++	if (npu->soc_data->version != NPU_V2)
++		return 0;
++
++	rmem = airoha_npu_dma_pool(npu, "dma", "restricted-dma-pool");
++	if (IS_ERR(rmem))
++		return dev_err_probe(dev, PTR_ERR(rmem), "Invalid NPU DMA pool\n");
++	/* OF DMA configuration attaches this pool before the driver probes. */
++	if (!IS_ENABLED(CONFIG_DMA_RESTRICTED_POOL) ||
++	    !is_swiotlb_for_alloc(dev) || !rmem->priv)
++		return dev_err_probe(dev, -ENODEV,
++				     "NPU restricted DMA pool is not attached\n");
++
++	rmem = airoha_npu_dma_pool(npu, "coherent", "shared-dma-pool");
++	if (IS_ERR(rmem))
++		return dev_err_probe(dev, PTR_ERR(rmem),
++				     "Invalid NPU coherent DMA pool\n");
++
++	/* Keep large coherent rings out of SWIOTLB's 256 KiB slot sets.
++	 * The per-device pool is exclusive: exhaustion must fail rather than
++	 * fall back to an allocation outside the NPU's address window.
++	 */
++	err = of_reserved_mem_device_init_by_name(dev, dev->of_node, "coherent");
++	if (err)
++		return dev_err_probe(dev, err, "Cannot attach NPU coherent DMA pool\n");
++
++	return 0;
++}
++
  static int airoha_npu_probe(struct platform_device *pdev)
  {
  	struct device *dev = &pdev->dev;
@@ -1476,9 +1607,18 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +		return -ENODEV;
 +
  	npu->dev = dev;
++	if (npu->soc_data->version == NPU_V2) {
++		/* Also release the pool attached by OF on any probe failure.
++		 * Register before allocations so devres frees their buffers first.
++		 */
++		err = devm_add_action_or_reset(dev, airoha_npu_dma_release, dev);
++		if (err)
++			return err;
++	}
  	npu->ops.ppe_init = airoha_npu_ppe_init;
  	npu->ops.ppe_deinit = airoha_npu_ppe_deinit;
-@@ -753,9 +1903,33 @@ static int airoha_npu_probe(struct platf
+ 	npu->ops.ppe_init_stats = airoha_npu_ppe_stats_setup;
+@@ -753,9 +2008,36 @@ static int airoha_npu_probe(struct platf
  	if (IS_ERR(npu->regmap))
  		return PTR_ERR(npu->regmap);
  
@@ -1493,6 +1633,9 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	of_node_put(np);
 +	if (!rmem)
 +		return -ENODEV;
++	if (!airoha_npu_dma_range_valid(npu, rmem->base, rmem->size))
++		return dev_err_probe(dev, -ERANGE,
++				     "NPU firmware is outside its DRAM window\n");
 +	priv->rmem = rmem;
 +	priv->fw_addr = devm_memremap(dev, rmem->base, rmem->size,
 +				      MEMREMAP_WC);
@@ -1515,7 +1658,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	irq = platform_get_irq(pdev, 0);
  	if (irq < 0)
-@@ -766,82 +1940,70 @@ static int airoha_npu_probe(struct platf
+@@ -766,82 +2048,73 @@ static int airoha_npu_probe(struct platf
  	if (err)
  		return err;
  
@@ -1541,10 +1684,14 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 -	}
 -
 -	/* wlan IRQ lines */
-+	/* WLAN IRQ lines follow the mailbox IRQ on both NPU revisions. */
++	/* V2 keeps the DT order: mailbox, eight watchdogs, six WLAN IRQs. */
  	for (i = 0; i < ARRAY_SIZE(npu->irqs); i++) {
 -		irq = platform_get_irq(pdev, i + ARRAY_SIZE(npu->cores) + 1);
-+		irq = platform_get_irq(pdev, i + 1);
++		int index = i + 1;
++
++		if (npu->soc_data->version == NPU_V2)
++			index += npu->soc_data->max_cores;
++		irq = platform_get_irq(pdev, index);
  		if (irq < 0)
  			return irq;
  
@@ -1552,11 +1699,9 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	}
  
 -	err = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
-+	err = dma_set_coherent_mask(dev, DMA_BIT_MASK(32));
++	err = airoha_npu_init_dma(npu);
  	if (err)
--		return err;
-+		return dev_err_probe(dev, err,
-+				     "No usable coherent DMA configuration\n");
+ 		return err;
  
 -	for (i = 0; i < ARRAY_SIZE(npu->cores); i++) {
 +	/*
@@ -1582,26 +1727,26 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 -	err = airoha_npu_run_firmware(dev, base, &res);
 -	if (err)
 -		return err;
- 
+-
 -	regmap_write(npu->regmap, REG_CR_NPU_MIB(10),
 -		     res.start + NPU_EN7581_FIRMWARE_RV32_MAX_SIZE);
 -	regmap_write(npu->regmap, REG_CR_NPU_MIB(11), 0x40000); /* SRAM 256K */
 -	regmap_write(npu->regmap, REG_CR_NPU_MIB(12), 0);
 -	regmap_write(npu->regmap, REG_CR_NPU_MIB(21), 1);
 -	msleep(100);
-+		if (npu->soc_data->version < NPU_V2)
-+			continue;
  
 -	/* setting booting address */
 -	for (i = 0; i < NPU_NUM_CORES; i++)
 -		regmap_write(npu->regmap, REG_CR_BOOT_BASE(i), res.start);
 -	usleep_range(1000, 2000);
--
++		if (npu->soc_data->version < NPU_V2)
++			continue;
+ 
 -	/* enable NPU cores */
 -	regmap_write(npu->regmap, REG_CR_BOOT_CONFIG, 0xff);
 -	regmap_write(npu->regmap, REG_CR_BOOT_TRIGGER, 0x1);
 -	msleep(100);
-+		irq = platform_get_irq(pdev, i + npu->soc_data->max_cores + 1);
++		irq = platform_get_irq(pdev, i + 1);
 +		if (irq < 0)
 +			return irq;
  
@@ -1636,7 +1781,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	.driver = {
  		.name = "airoha-npu",
  		.of_match_table = of_airoha_npu_match,
-@@ -849,6 +2011,8 @@ static struct platform_driver airoha_npu
+@@ -849,6 +2122,8 @@ static struct platform_driver airoha_npu
  };
  module_platform_driver(airoha_npu_driver);
  

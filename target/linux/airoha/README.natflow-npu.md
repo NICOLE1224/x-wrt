@@ -75,16 +75,25 @@ natflow 后由接收方释放，不再进入普通 RX 转发。
 
 ## 设备与内存
 
-- AN7581 沿用现有 eMMC Kite/MT7992、Eagle/MT7996 设备配置。
+- AN7581 使用 multievb 基础设备树与 eMMC Kite/MT7992、Eagle/MT7996 overlay。
 - AN7583 新增 `airoha_an7583-evb-emmc-kite`、
-  `airoha_an7583-evb-emmc-eagle` 配置，接入 Gen3 PCIe、对应无线固件包
+  `airoha_an7583-evb-emmc-eagle` 配置，使用 multievb 基础设备树与对应
+  eMMC 无线 overlay，接入 Gen3 PCIe、对应无线固件包
   及 AN7583 NPU 固件。当前只描述一个 Gen3 主接口，未描述第二个 PCIe
   HIF2 接口；三频/双 HIF 的完整行为需要后续板级验证。
 - PCIe 主控制器匹配采用[上游 AN7583 实现](https://lists.infradead.org/pipermail/linux-mediatek/2025-September/098848.html)。
   板上 PERST 接线、端点枚举、EEPROM/校准数据和 AN7583 固件的无线消息
   协议仍需在实际 EVB 上验证；新增 profile 属于接入配置。
 - `an758x-npu-wlan.dtsi` 共享原有无线缓冲区预留，只有无线配置包含它。
-  Nokia MD/MF 等无无线设备继续只保留原有 NPU/以太网内存。
+  Nokia MD/MF 等无无线设备不预留这些无线缓冲区。
+- NPU V2 的 DMA 地址限定在 `0x80000000` 至 `0xbfffffff`。所有 AN7581/
+  AN7583 配置另预留 1 MiB streaming 池与 1 MiB coherent 池；无线配置
+  分别扩大到 64 MiB 与 8 MiB。两池由内核在该窗口内动态选址，原有
+  firmware、无线缓冲区和 QDMA 预留继续保留。coherent 池供 mailbox 和
+  连续描述符使用，支持 MT7992 的单次 512 KiB 分配；streaming 池供
+  mt76 收发包映射使用。池缺失、未正确挂接或地址越界时拒绝启动 NPU，
+  池耗尽时分配失败，不向不受约束的内存回退。PPE 传给 NPU 的外部
+  缓冲区也须位于该窗口，否则拒绝对应 NPU 操作。
 - natflow 保持 8192 个逻辑槽、四路桶的 ABI。AN7581 的物理 PPE bank
   映射沿用现有双 PPE 实现，AN7583 使用单 PPE；本轮未启用 16K DRAM
   FOE 表。NPU 无线缓冲区在 DRAM 中，与 DRAM FOE 表用途不同。
@@ -117,10 +126,11 @@ mt76 生命周期及接收处理已整合到 `mt76-20261016` 源码包；无线�
 ARM64 的以太网、PPE、NPU、PON PCS 和路径相关对象编译；mt76 的 NPU
 对象也分别编译通过。包含 995 的展开源码与拆分前逐文件一致。
 
-以上不包含独立 WED 和内置 xPON 驱动的完整构建：基础补丁仍分别缺少
-`drivers/net/ethernet/mtk_wed_private.h` 与 `include/linux/optical_frontend.h`
-等公共接口依赖。PON 数据路径接口及 PCS 对象编译通过，不等同于整个
-PON 控制器已通过构建或实机验证。
+独立 WED 和内置 xPON V1 源码依赖的公共框架尚未齐备，Kconfig 通过
+`depends on BROKEN` 保持这两个选项不可选，待接入匹配的 MediaTek WED
+私有 API、optical frontend 和 xPON 框架后再启用。这不影响 AN758x 的
+模块化 PON 控制器。PON 数据路径接口及 PCS 对象编译通过，不等同于
+整个 PON 控制器已通过构建或实机验证。
 
 当前验证包括相关内核对象的 ARM64/ARM32 编译、mt76 NPU 与无 NPU 对象
 编译、natflow 编译、相关路径完整补丁栈回放、七个设备树编译，以及带

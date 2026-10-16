@@ -15,7 +15,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -1907,13 +1907,20 @@ static void econet_qdma_cleanup_tx(struc
+@@ -1907,13 +1907,20 @@
  		guard(spinlock_bh)(&q->lock_bh);
  		for (j = 0; j < q->ndesc; j++) {
  			struct econet_q_tx_ent *e = &q->entry[j];
@@ -37,7 +37,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  			memset(e, 0, sizeof(*e));
  
  			e->freelist_next = 0xffff;
-@@ -3065,12 +3072,19 @@ void airoha_qdma_cleanup_tx_queue(struct
+@@ -3077,12 +3084,16 @@
  	for (i = 0; i < q->ndesc; i++) {
  		struct airoha_queue_entry *e = &q->entry[i];
  		struct airoha_qdma_desc *desc = &q->desc[i];
@@ -49,16 +49,13 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  		airoha_qdma_unmap_tx_entry(eth, e);
 -		dev_kfree_skb_any(e->skb);
 +		if (skb) {
-+			struct netdev_queue *txq;
-+
-+			txq = skb_get_tx_queue(skb->dev, skb);
-+			netdev_tx_completed_queue(txq, 1, skb->len);
++			airoha_qdma_complete_tx(e, skb);
 +			dev_kfree_skb_any(skb);
 +		}
  		e->skb = NULL;
  		list_add_tail(&e->list, &q->tx_list);
  
-@@ -6616,15 +6630,11 @@ static int airoha_dev_stop(struct net_de
+@@ -6637,15 +6648,11 @@
  		airoha_qdma_stop(qdma);
  	} else {
  		bool xpon_control;

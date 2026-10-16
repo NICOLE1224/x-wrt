@@ -2,6 +2,6 @@
 
 #include "an7583-evb-emmc-wlan.dtsi"
 
-/ {
+&{/} {
 	model = "Airoha AN7583 Evaluation Board (eMMC + MT7992)";
 };

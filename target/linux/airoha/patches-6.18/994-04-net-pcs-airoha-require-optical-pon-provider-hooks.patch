@@ -9,7 +9,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
 --- a/drivers/net/pcs/airoha/pcs-airoha-common.c
 +++ b/drivers/net/pcs/airoha/pcs-airoha-common.c
-@@ -211,7 +211,8 @@
+@@ -211,7 +211,8 @@ int airoha_pcs_pon_config_rx(struct phyl
  	priv = port->priv;
  
  	/* DTS and SoC match data provide the AN7581 and AN7583 register windows. */
@@ -19,7 +19,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	switch (mode) {
-@@ -315,7 +316,8 @@
+@@ -315,7 +316,8 @@ int airoha_pcs_pon_retrain_rx(struct phy
  
  	port = to_airoha_pcs_port(pcs);
  	priv = port->priv;
@@ -29,7 +29,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	mode = priv->pon_mode;
-@@ -343,7 +345,8 @@
+@@ -343,7 +345,8 @@ int airoha_pcs_pon_stop_rx(struct phylin
  
  	port = to_airoha_pcs_port(pcs);
  	priv = port->priv;
@@ -39,7 +39,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	return priv->data->pon_stop_rx(priv, port->index);
-@@ -363,7 +366,8 @@
+@@ -363,7 +366,8 @@ int airoha_pcs_pon_get_rx_status(struct
  
  	port = to_airoha_pcs_port(pcs);
  	priv = port->priv;

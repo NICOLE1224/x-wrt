@@ -40,7 +40,7 @@ Signed-off-by: Paolo Abeni <pabeni@redhat.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -6171,11 +6171,14 @@ static void airoha_hw_cleanup(struct air
+@@ -6173,11 +6173,14 @@ static void airoha_hw_cleanup(struct air
  
  
  
@@ -56,7 +56,7 @@ Signed-off-by: Paolo Abeni <pabeni@redhat.com>
  
  	/* Read relevant MIB for GDM with multiple port attached */
  	if (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)
-@@ -6186,152 +6189,188 @@ static void airoha_dev_get_hw_stats(stru
+@@ -6188,152 +6191,188 @@ static void airoha_dev_get_hw_stats(stru
  
  	u64_stats_update_begin(&dev->stats.syncp);
  
@@ -312,7 +312,7 @@ Signed-off-by: Paolo Abeni <pabeni@redhat.com>
  }
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -457,6 +457,33 @@ struct airoha_hw_stats {
+@@ -459,6 +459,33 @@ struct airoha_hw_stats {
  	u64 rx_fragment;
  	u64 rx_jabber;
  	u64 rx_len[7];

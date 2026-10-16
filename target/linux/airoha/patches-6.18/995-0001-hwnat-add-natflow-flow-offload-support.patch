@@ -30,22 +30,22 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  }
  
  static void econet_prepare_qdma_cfg(struct airoha_qdma_mips_cfg *cfg,
-@@ -2744,6 +2747,14 @@
- 
- 		if (airoha_qdma_foe_entry_is_valid(eth, hash))
+@@ -2746,6 +2749,14 @@ static int airoha_qdma_rx_process(struct
  			skb_set_hash(q->skb, jhash_1word(hash, 0), PKT_HASH_TYPE_L4);
-+
-+		if (airoha_qdma_foe_entry_is_valid(eth, hash) &&
+ 
+ 		if (airoha_qdma_foe_entry_is_valid(eth, hash) &&
 +		    airoha_ppe_natflow_rx(eth->ppe, q->skb, hash, reason)) {
 +			done++;
 +			dev_kfree_skb(q->skb);
 +			q->skb = NULL;
 +			continue;
 +		}
- 
- 		if (airoha_qdma_foe_entry_is_valid(eth, hash) &&
++
++		if (airoha_qdma_foe_entry_is_valid(eth, hash) &&
  		    airoha_qdma_should_check_ppe_skb(eth, reason))
-@@ -7708,6 +7719,7 @@
+ 			airoha_ppe_check_skb(&eth->ppe->common.dev, q->skb, hash,
+ 					     false);
+@@ -7708,6 +7719,7 @@ static netdev_tx_t __airoha_dev_xmit(str
  	bool xpon_oam = ctrl || (xpon && xpon->oam);
  	bool pon_data = !ctrl && (dev->flags & AIROHA_PRIV_F_PON);
  	u32 pon_tag = 0;
@@ -53,7 +53,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	u32 nr_frags, tag = 0, msg0, msg1, len;
  	struct airoha_queue_entry *e;
  	struct airoha_qdma *qdma;
-@@ -7747,6 +7759,13 @@
+@@ -7747,6 +7759,13 @@ static netdev_tx_t __airoha_dev_xmit(str
  			goto error;
  		xpon = &classified;
  	}
@@ -67,7 +67,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	queue_mapping = xpon ? xpon->queue : skb_get_queue_mapping(skb);
  	qid = airoha_qdma_get_txq(qdma, queue_mapping);
  	q = &qdma->q_tx[qid];
-@@ -7854,7 +7873,8 @@
+@@ -7854,7 +7873,8 @@ static netdev_tx_t __airoha_dev_xmit(str
  		}
  	}
  
@@ -77,12 +77,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (airoha_is(qdma->eth, econet_en7580))
  		msg1 = FIELD_PREP(EN7580_QDMA_ETH_TXMSG_NBOQ_MASK,
  				  dev->nbq) |
-@@ -9054,6 +9074,22 @@
- 	.ndo_get_stats64	= airoha_gdm_dev_get_stats64,
- 	.ndo_set_mac_address	= airoha_gdm_dev_set_macaddr,
+@@ -9076,6 +9096,22 @@ static const struct net_device_ops airoh
  	.ndo_setup_tc		= airoha_gdm_dev_tc_setup,
-+};
-+
+ };
+ 
 +static const struct net_device_ops airoha_an7563_netdev_ops = {
 +	.ndo_init		= airoha_dev_init,
 +	.ndo_open		= airoha_dev_open,
@@ -97,10 +95,12 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	.ndo_setup_tc		= airoha_gdm_dev_tc_setup,
 +	.ndo_flow_offload	= airoha_ppe_natflow_offload,
 +	.ndo_flow_offload_check	= airoha_ppe_natflow_offload_check,
- };
- 
++};
++
  static void airoha_pon_read_datapath_stats(
-@@ -9137,11 +9173,17 @@
+ 	struct airoha_gdm_dev *dev, struct airoha_pon_datapath_stats *stats)
+ {
+@@ -9157,11 +9193,17 @@ static int airoha_eth_pon_commit_config(
  				      u32 qdma_tag)
  {
  	struct airoha_pon_flow_table *old;
@@ -118,7 +118,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		mutex_unlock(&flow_offload_mutex);
  		kfree(table);
  		return err;
-@@ -9149,6 +9191,8 @@
+@@ -9169,6 +9211,8 @@ static int airoha_eth_pon_commit_config(
  	old = rcu_replace_pointer(dev->pon_flow_table, table,
  				  lockdep_is_held(&flow_offload_mutex));
  	WRITE_ONCE(dev->pon_qdma_tag, qdma_tag);
@@ -127,7 +127,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	mutex_unlock(&flow_offload_mutex);
  	synchronize_net();
  	kfree(old);
-@@ -9580,7 +9624,9 @@
+@@ -9600,7 +9644,9 @@ static int airoha_alloc_gdm_device(struc
  		return -ENOMEM;
  	}
  
@@ -148,7 +148,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #include <linux/soc/airoha/airoha_offload.h>
  #include <uapi/linux/if_pppox.h>
  #include <net/dsa.h>
-@@ -339,6 +340,9 @@
+@@ -339,6 +340,9 @@ enum {
  	CRSN_25 = 0x19,
  };
  
@@ -158,7 +158,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  enum airoha_gdm_index {
  	AIROHA_GDM1_IDX = 1,
  	AIROHA_GDM2_IDX = 2,
-@@ -840,6 +844,8 @@
+@@ -842,6 +846,8 @@ enum airoha_flow_entry_type {
  	FLOW_TYPE_L2_SUBFLOW,
  };
  
@@ -167,7 +167,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct airoha_flow_table_entry {
  	union {
  		struct hlist_node list; /* PPE L3 flow entry */
-@@ -859,6 +865,8 @@
+@@ -861,6 +867,8 @@ struct airoha_flow_table_entry {
  	unsigned long cookie;
  	struct airoha_gdm_dev *egress_dev;
  	struct list_head gc_node;
@@ -176,7 +176,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	bool smac_ref;
  
  	/* FoE v1 binds a software flow to a hardware-created hash bucket on
-@@ -1273,8 +1281,25 @@
+@@ -1275,8 +1283,25 @@ struct airoha_ppe {
  	 */
  	bool offload_setup_done;
  
@@ -203,7 +203,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	struct airoha_ppe_v1 v1;
  };
-@@ -1550,6 +1575,14 @@
+@@ -1552,6 +1577,14 @@ void airoha_ppe_set_cpu_port(struct airo
  bool airoha_ppe_is_enabled(struct airoha_eth *eth, int index);
  void airoha_ppe_check_skb(struct airoha_ppe_dev *dev, struct sk_buff *skb,
  			  u16 hash, bool rx_wlan);
@@ -228,7 +228,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #include <net/pkt_cls.h>
  #include <net/route.h>
  #include <uapi/linux/ppp_defs.h>
-@@ -35,7 +36,7 @@
+@@ -35,7 +36,7 @@ static DEFINE_SPINLOCK(ppe_lock);
  #define AN7563_PPE_BIND_RATE		0x001e001e
  #define AN7563_PPE_BIND_LIMIT0		0x0fa00fa0
  #define AN7563_PPE_BIND_LIMIT1		0x00011f40
@@ -237,7 +237,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define AN7563_PPE_KEEPALIVE_SCANS	2
  #define AN7563_PPE_KEEPALIVE					\
  	(FIELD_PREP(PPE_KEEPALIVE_UDP_MASK, AN7563_PPE_KEEPALIVE_SCANS) | \
-@@ -59,6 +60,52 @@
+@@ -59,6 +60,52 @@ static DEFINE_SPINLOCK(ppe_lock);
  #define AN7563_PPE_L2B_ETYPE0		0x88a88100
  #define AN7563_PPE_L2B_ETYPE1		0x08000000
  #define AN7563_PPE_L2B_ETYPE2		0x000086dd
@@ -290,7 +290,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct rhashtable_params airoha_flow_table_params = {
  	.head_offset = offsetof(struct airoha_flow_table_entry, node),
  	.key_offset = offsetof(struct airoha_flow_table_entry, cookie),
-@@ -79,9 +126,23 @@
+@@ -79,9 +126,23 @@ static int airoha_ppe_v1_flow_offload_de
  					       struct flow_cls_offload *f);
  static int airoha_ppe_v1_flow_offload_stats(struct flow_cls_offload *f);
  static void airoha_ppe_v1_hw_init(struct airoha_ppe *ppe);
@@ -315,7 +315,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  }
  
  static int airoha_ppe_smac_write(struct airoha_ppe *ppe, unsigned int id,
-@@ -218,7 +279,7 @@
+@@ -218,7 +279,7 @@ static int airoha_ppe_get_num_stats_entr
  	if (!IS_ENABLED(CONFIG_NET_AIROHA_FLOW_STATS))
  		return -EOPNOTSUPP;
  
@@ -324,7 +324,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (airoha_ppe_sram_only(ppe->common.eth))
  		return -EOPNOTSUPP;
  
-@@ -853,7 +914,8 @@
+@@ -853,7 +914,8 @@ static int airoha_ppe_pon_select_flow(st
  	u16 vlan_id;
  	u8 pbit;
  
@@ -334,7 +334,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			 "PON flow lookup without configuration protection");
  
  	/* EPON uses the fixed LLID channel configured by the line controller. */
-@@ -864,7 +926,8 @@
+@@ -864,7 +926,8 @@ static int airoha_ppe_pon_select_flow(st
  	}
  
  	table = rcu_dereference_protected(dev->pon_flow_table,
@@ -344,7 +344,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (!table)
  		return -EOPNOTSUPP;
  
-@@ -931,8 +994,8 @@
+@@ -931,8 +994,8 @@ static int airoha_ppe_foe_entry_prepare(
  
  	/* EN7523 vendor entries use PORT_AG=0 (account group); mainline's 0x1f
  	 * yields ib2=0x3e240 vs the vendor's 0x240 for the same flow.
@@ -355,7 +355,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	 */
  	val = FIELD_PREP(AIROHA_FOE_IB2_PORT_AG,
  			 airoha_is(eth, airoha_en7523) ? 0x0 :
-@@ -1540,9 +1603,15 @@
+@@ -1540,9 +1603,15 @@ static int airoha_ppe_foe_remove_flow(st
  		data.ib1 &= ~AIROHA_FOE_IB1_BIND_STATE;
  		data.ib1 |= FIELD_PREP(AIROHA_FOE_IB1_BIND_STATE,
  				       AIROHA_FOE_STATE_INVALID);
@@ -374,7 +374,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		if (ppe->foe_owner && ppe->foe_owner[e->hash] == e)
  			ppe->foe_owner[e->hash] = NULL;
  		e->data = data;
-@@ -2038,6 +2107,8 @@
+@@ -2038,6 +2107,8 @@ static void airoha_ppe_foe_insert_entry(
  			hlist_add_head(&e->list, &ppe->foe_flow[sw_idx]);
  			e->hash = sw_idx;
  			airoha_ppe_foe_reserve_slot(ppe, e, sw_idx);
@@ -383,7 +383,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
  		}
  
-@@ -2071,6 +2142,8 @@
+@@ -2071,6 +2142,8 @@ static void airoha_ppe_foe_insert_entry(
  		airoha_ppe_foe_reserve_slot(ppe, e, sw_idx);
  		commit_done = true;
  		airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
@@ -392,7 +392,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		break;
  	}
  
-@@ -2492,8 +2565,9 @@
+@@ -2492,8 +2565,9 @@ int airoha_ppe_remove_egress_flows(struc
  	lockdep_assert_held(&flow_offload_mutex);
  	if (!eth->ppe)
  		return 0;
@@ -404,7 +404,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	rhashtable_walk_enter(&eth->flow_table, &iter);
  	rhashtable_walk_start(&iter);
  	while ((e = rhashtable_walk_next(&iter))) {
-@@ -2653,7 +2727,8 @@
+@@ -2653,7 +2727,8 @@ static int airoha_ppe_wait_for_npu_init(
  
  static int airoha_ppe_offload_setup(struct airoha_eth *eth)
  {
@@ -414,7 +414,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	struct airoha_ppe *ppe = eth->ppe;
  	int err, ppe_num_stats_entries;
  
-@@ -2712,6 +2787,1231 @@
+@@ -2712,6 +2787,1231 @@ error_npu_put:
  	return err;
  }
  
@@ -1646,7 +1646,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
  {
  	struct airoha_ppe *ppe = dev->priv;
-@@ -2727,6 +4027,10 @@
+@@ -2727,6 +4027,10 @@ int airoha_ppe_setup_tc_block_cb(struct
  
  	mutex_lock(&flow_offload_mutex);
  
@@ -1657,7 +1657,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (!eth->npu && !eth->ppe->offload_setup_done) {
  		dev_info(eth->dev, "NPU not attached, setting up offload\n");
  		err = airoha_ppe_offload_setup(eth);
-@@ -2858,7 +4162,7 @@
+@@ -2858,7 +4162,7 @@ static void airoha_ppe_common_disable(st
  
  static int airoha_ppe_datapath_init(struct airoha_eth *eth)
  {
@@ -1666,7 +1666,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	u32 ppe_num_entries;
  	struct airoha_ppe *ppe;
  
-@@ -2873,8 +4177,14 @@
+@@ -2873,8 +4177,14 @@ static int airoha_ppe_datapath_init(stru
  	spin_lock_init(&ppe->smac_lock);
  	ppe->common.dev.ops.setup_tc_block_cb = airoha_ppe_setup_tc_block_cb;
  	ppe->common.dev.ops.check_skb = airoha_ppe_check_skb;
@@ -1681,7 +1681,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	ppe_num_entries = airoha_ppe_get_total_num_entries(ppe);
  	foe_size = ppe_num_entries * AIROHA_FOE_ENTRY_SIZE;
-@@ -2889,13 +4199,24 @@
+@@ -2889,13 +4199,24 @@ static int airoha_ppe_datapath_init(stru
  		dev_err(eth->dev, "OOM allocating FOE flows array\n");
  		return -ENOMEM;
  	}
@@ -1709,7 +1709,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	}
  
  	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
-@@ -2942,6 +4263,13 @@
+@@ -2942,6 +4263,13 @@ static int airoha_ppe_datapath_init(stru
  	}
  
  	eth->ppe = ppe;
@@ -1723,27 +1723,27 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	airoha_ppe_common_enable(&ppe->common);
  	dev_info(eth->dev, "PPE Initialization completed successfully\n");
  	return 0;
-@@ -2958,6 +4286,8 @@
- {
+@@ -2959,6 +4287,8 @@ static void airoha_ppe_datapath_deinit(s
  	struct airoha_npu *npu;
  	struct airoha_ppe *ppe = eth->ppe;
-+
-+	airoha_ppe_natflow_flush(ppe);
  
++	airoha_ppe_natflow_flush(ppe);
++
  	mutex_lock(&flow_offload_mutex);
  
+ 	WRITE_ONCE(ppe->offload_setup_done, false);
 --- a/drivers/net/ppp/ppp_generic.c
 +++ b/drivers/net/ppp/ppp_generic.c
-@@ -54,6 +54,8 @@
- #include <linux/nsproxy.h>
+@@ -55,6 +55,8 @@
  #include <net/net_namespace.h>
  #include <net/netns/generic.h>
-+
-+#include <net/netfilter/nf_flow_table.h>
  
++#include <net/netfilter/nf_flow_table.h>
++
  #define PPP_VERSION	"2.4.2"
  
-@@ -1620,6 +1622,35 @@
+ /*
+@@ -1620,6 +1622,35 @@ static int ppp_fill_forward_path(struct
  	return chan->ops->fill_forward_path(ctx, path, chan);
  }
  
@@ -1779,7 +1779,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct net_device_ops ppp_netdev_ops = {
  	.ndo_init	 = ppp_dev_init,
  	.ndo_uninit      = ppp_dev_uninit,
-@@ -1627,6 +1658,7 @@
+@@ -1627,6 +1658,7 @@ static const struct net_device_ops ppp_n
  	.ndo_siocdevprivate = ppp_net_siocdevprivate,
  	.ndo_get_stats64 = ppp_get_stats64,
  	.ndo_fill_forward_path = ppp_fill_forward_path,
@@ -1798,7 +1798,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #include <linux/nsproxy.h>
  #include <net/net_namespace.h>
  #include <net/netns/generic.h>
-@@ -1007,9 +1009,30 @@
+@@ -1007,9 +1009,30 @@ static int pppoe_fill_forward_path(struc
  	return 0;
  }
  
@@ -1831,11 +1831,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static int pppoe_recvmsg(struct socket *sock, struct msghdr *m,
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -91,6 +91,32 @@
- void netdev_set_default_ethtool_ops(struct net_device *dev,
+@@ -92,6 +92,32 @@ void netdev_set_default_ethtool_ops(stru
  				    const struct ethtool_ops *ops);
  void netdev_sw_irq_coalesce_default_on(struct net_device *dev);
-+
+ 
 +#define NATFLOW_OFFLOAD_HWNAT_FAKE
 +#if defined(CONFIG_SOC_AIROHA_AN7563)
 +#define NATFLOW_OFFLOAD_AN7563_SRAM_HASH
@@ -1861,10 +1860,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				      flow_offload_t *flow,
 +				      flow_offload_hw_path_t *src,
 +				      flow_offload_hw_path_t *dest);
- 
++
  /* Backlog congestion levels */
  #define NET_RX_SUCCESS		0	/* keep 'em coming, baby */
-@@ -1611,6 +1637,11 @@
+ #define NET_RX_DROP		1	/* packet dropped */
+@@ -1611,6 +1637,11 @@ struct net_device_ops {
  	int			(*ndo_bridge_dellink)(struct net_device *dev,
  						      struct nlmsghdr *nlh,
  						      u16 flags);
@@ -1878,7 +1878,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	int			(*ndo_get_phys_port_id)(struct net_device *dev,
 --- a/include/linux/ppp_channel.h
 +++ b/include/linux/ppp_channel.h
-@@ -33,6 +33,8 @@
+@@ -33,6 +33,8 @@ struct ppp_channel_ops {
  	int	(*fill_forward_path)(struct net_device_path_ctx *,
  				     struct net_device_path *,
  				     const struct ppp_channel *);
@@ -1889,16 +1889,16 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/linux/soc/airoha/airoha_offload.h
 +++ b/include/linux/soc/airoha/airoha_offload.h
-@@ -15,6 +15,8 @@
- struct device;
+@@ -16,6 +16,8 @@ struct device;
  struct device_node;
  struct net_device;
-+
-+#define AIROHA_PPE_NATFLOW_WLAN 1
  
++#define AIROHA_PPE_NATFLOW_WLAN 1
++
  enum {
  	PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED = 0x0f,
-@@ -30,6 +32,14 @@
+ };
+@@ -30,6 +32,14 @@ struct airoha_ppe_dev {
  		void (*check_skb_reason)(struct airoha_ppe_dev *dev,
  					 struct sk_buff *skb, u16 hash,
  					 u8 reason);
@@ -1913,11 +1913,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		int (*setup_tc)(struct airoha_ppe_dev *dev,
  				struct net_device *netdev,
  				enum tc_setup_type type, void *type_data);
-@@ -113,6 +123,30 @@
- }
+@@ -114,6 +124,30 @@ static inline int airoha_ppe_dev_setup_t
  
  #endif
-+
+ 
 +/* A true wlan_rx result asks the caller to free the keepalive copy. */
 +static inline bool
 +airoha_ppe_dev_wlan_rx(struct airoha_ppe_dev *dev, struct sk_buff *skb,
@@ -1941,17 +1940,16 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	return dev && dev->ops.wlan_flush ?
 +	       dev->ops.wlan_flush(dev, owner) : -EOPNOTSUPP;
 +}
- 
++
  #define NPU_NUM_IRQ		6
  #define NPU_RX0_DESC_NUM	512
+ #define NPU_RX1_DESC_NUM	512
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -188,6 +188,64 @@
- 	u16					type;
- 	u32					timeout;
+@@ -190,6 +190,64 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
-+};
-+
+ };
+ 
 +#define FLOW_OFFLOAD_PATH_ETHERNET      BIT(0)
 +#define FLOW_OFFLOAD_PATH_VLAN          BIT(1)
 +#define FLOW_OFFLOAD_PATH_PPPOE         BIT(2)
@@ -2008,9 +2006,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	 * The conduit identifies the tag protocol; 0xffff means no DSA.
 +	 */
 +	u16 dsa_port;
- };
- 
++};
++
  #define NF_FLOW_TIMEOUT (30 * HZ)
+ #define nf_flowtable_time_stamp	(u32)jiffies
+ 
 --- a/net/8021q/vlan_dev.c
 +++ b/net/8021q/vlan_dev.c
 @@ -28,6 +28,7 @@
@@ -2021,11 +2021,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #include "vlan.h"
  #include "vlanproc.h"
-@@ -980,6 +981,23 @@
- };
+@@ -981,6 +982,23 @@ static const struct macsec_ops macsec_of
  
  #endif
-+
+ 
 +static int vlan_dev_flow_offload_check(flow_offload_hw_path_t *path)
 +{
 +	struct net_device *dev = path->dev;
@@ -2042,10 +2041,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +
 +	return 0;
 +}
- 
++
  static const struct ethtool_ops vlan_ethtool_ops = {
  	.get_link_ksettings	= vlan_ethtool_get_link_ksettings,
-@@ -1020,6 +1038,7 @@
+ 	.get_drvinfo	        = vlan_ethtool_get_drvinfo,
+@@ -1020,6 +1038,7 @@ static const struct net_device_ops vlan_
  	.ndo_fix_features	= vlan_dev_fix_features,
  	.ndo_get_iflink		= vlan_dev_get_iflink,
  	.ndo_fill_forward_path	= vlan_dev_fill_forward_path,
@@ -2063,14 +2063,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #include <linux/uaccess.h>
  #include <net/netdev_lock.h>
-@@ -426,6 +427,26 @@
- 	case DEV_PATH_BR_VLAN_KEEP:
- 		break;
- 	}
-+
-+	return 0;
-+}
-+
+@@ -430,6 +431,26 @@ static int br_fill_forward_path(struct n
+ 	return 0;
+ }
+ 
 +static int br_flow_offload_check(flow_offload_hw_path_t *path)
 +{
 +	struct net_device *dev = path->dev;
@@ -2087,10 +2083,14 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	path->dev = dst->dst->dev;
 +	if (path->dev->netdev_ops->ndo_flow_offload_check)
 +		return path->dev->netdev_ops->ndo_flow_offload_check(path);
- 
- 	return 0;
- }
-@@ -471,6 +492,7 @@
++
++	return 0;
++}
++
+ static const struct ethtool_ops br_ethtool_ops = {
+ 	.get_drvinfo		 = br_getinfo,
+ 	.get_link		 = ethtool_op_get_link,
+@@ -471,6 +492,7 @@ static const struct net_device_ops br_ne
  	.ndo_bridge_dellink	 = br_dellink,
  	.ndo_features_check	 = passthru_features_check,
  	.ndo_fill_forward_path	 = br_fill_forward_path,
@@ -2100,7 +2100,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct device_type br_type = {
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -442,6 +442,12 @@
+@@ -442,6 +442,12 @@ static void unlist_netdevice(struct net_
  	dev_base_seq_inc(dev_net(dev));
  }
  
@@ -2124,7 +2124,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #include "conduit.h"
  #include "dsa.h"
-@@ -2601,6 +2603,49 @@
+@@ -2601,6 +2603,49 @@ static int dsa_user_hwtstamp_set(struct
  	return ds->ops->port_hwtstamp_set(ds, dp->index, cfg, extack);
  }
  
@@ -2174,7 +2174,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct net_device_ops dsa_user_netdev_ops = {
  	.ndo_open		= dsa_user_open,
  	.ndo_stop		= dsa_user_close,
-@@ -2622,6 +2667,7 @@
+@@ -2622,6 +2667,7 @@ static const struct net_device_ops dsa_u
  	.ndo_vlan_rx_kill_vid	= dsa_user_vlan_rx_kill_vid,
  	.ndo_change_mtu		= dsa_user_change_mtu,
  	.ndo_fill_forward_path	= dsa_user_fill_forward_path,

@@ -35,7 +35,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static void econet_prepare_qdma_cfg(struct airoha_qdma_mips_cfg *cfg,
  				    const struct airoha_eth_soc_data *soc,
  				    int id);
-@@ -2151,7 +2159,7 @@
+@@ -2151,7 +2159,7 @@ airoha_qdma_get_xpon_dev(struct airoha_e
  			struct airoha_gdm_dev *dev = port->devs[j];
  
  			if (dev &&
@@ -44,7 +44,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  				return dev;
  		}
  	}
-@@ -2356,6 +2364,66 @@
+@@ -2358,6 +2366,66 @@ static bool airoha_qdma_rx_checksum_ok(s
  	return (ip4 || ip6) && l4_valid && !ip4_fault && !l4_fault;
  }
  
@@ -111,7 +111,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static struct sk_buff *airoha_qdma_build_rx_skb(struct airoha_queue *q,
  						struct airoha_qdma_desc *desc,
  						struct airoha_queue_entry *e,
-@@ -2436,7 +2504,7 @@
+@@ -2436,7 +2504,7 @@ static int airoha_qdma_rx_process(struct
  		struct airoha_queue_entry *e = &q->entry[q->tail];
  		struct airoha_qdma_desc *desc = &q->desc[q->tail];
  		u32 hash, reason, msg0, msg1, desc_ctrl;
@@ -120,7 +120,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		struct net_device *netdev;
  		bool xpon_oam;
  		int data_len, len;
-@@ -2497,7 +2565,10 @@
+@@ -2497,7 +2565,10 @@ static int airoha_qdma_rx_process(struct
  			 * source port. Resolve them through the registered xPON GDM2
  			 * provider before applying the normal source-port decoder.
  			 */
@@ -131,12 +131,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			     (msg0 & QDMA_ETH_RXMSG_OAM_MASK)))
  				dev = airoha_qdma_get_xpon_dev(eth);
  			else
- 				dev = airoha_qdma_get_gdm_dev(eth,
-@@ -2512,6 +2583,38 @@
- 			}
- 
+ 				dev = airoha_qdma_get_gdm_dev(
+@@ -2514,6 +2585,38 @@ static int airoha_qdma_rx_process(struct
  			netdev = netdev_from_priv(dev);
-+		}
+ 		}
+ 
 +		if (dev->flags & AIROHA_PRIV_F_PON) {
 +			u8 channel = FIELD_GET(QDMA_ETH_RXMSG_CHANNEL_MASK, msg0);
 +			bool control = airoha_qdma_is_pon_control(dev, msg0);
@@ -168,10 +167,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				done++;
 +				continue;
 +			}
- 		}
++		}
  		if (!q->skb) { /* first buffer */
  			q->skb = airoha_qdma_build_rx_skb(q, desc, e, netdev, xpon_oam);
-@@ -2648,10 +2751,19 @@
+ 			if (!q->skb)
+@@ -2653,10 +2756,19 @@ static int airoha_qdma_rx_process(struct
  					     false);
  
  		done++;
@@ -191,7 +191,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		if (q->skb) {
  			dev_kfree_skb(q->skb);
  			q->skb = NULL;
-@@ -2863,6 +2975,19 @@
+@@ -2868,6 +2980,19 @@ static void airoha_qdma_wake_netdev_txqs
  
  				netif_wake_subqueue(netdev, j);
  			}
@@ -211,11 +211,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		}
  	}
  	q->txq_stopped = false;
-@@ -2977,6 +3102,19 @@
+@@ -2991,6 +3116,19 @@ static int airoha_qdma_tx_napi_poll(stru
+ 		q->queued--;
  
  		if (skb) {
- 			struct netdev_queue *txq;
-+
 +			if (airoha_is_netdev(skb->dev)) {
 +				struct airoha_gdm_dev *owner = netdev_priv(skb->dev);
 +
@@ -228,10 +227,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +					}
 +				}
 +			}
- 
- 			txq = skb_get_tx_queue(skb->dev, skb);
- 			netdev_tx_completed_queue(txq, 1, skb->len);
-@@ -6701,7 +6839,12 @@
++
+ 			airoha_qdma_complete_tx(e, skb);
+ 			dev_kfree_skb_any(skb);
+ 		}
+@@ -6719,7 +6857,12 @@ static int airoha_dev_open(struct net_de
  	 * xPON-managed GDM2 to run without either. In the latter case the xPON
  	 * provider owns carrier, speed and duplex.
  	 */
@@ -245,8 +245,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  					 dev->flags & AIROHA_PRIV_F_XPON_MANAGED);
  	if (err) {
  		netdev_err(netdev, "could not attach PHY: %d\n", err);
-@@ -6799,7 +6942,13 @@
- 		airoha_update_netdev_features(dev);
+@@ -6815,7 +6958,13 @@ static int airoha_dev_open(struct net_de
+ 
  	}
  
 -	err = airoha_gdm_xpon_start(dev);
@@ -260,7 +260,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (err) {
  		netdev_err(netdev, "failed to start xPON provider: %d\n", err);
  		airoha_dev_stop(netdev);
-@@ -6816,7 +6965,10 @@
+@@ -6832,7 +6981,10 @@ static int airoha_dev_stop(struct net_de
  	bool econet = dev->common.family == AIROHA_ETH_FAMILY_ECONET;
  	struct airoha_qdma *qdma;
  
@@ -272,7 +272,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	netif_tx_disable(netdev);
  	qdma = airoha_qdma_deref(dev);
  
-@@ -7486,14 +7638,66 @@
+@@ -7514,14 +7666,66 @@ static void airoha_xpon_flush_services(s
  	spin_unlock_bh(&dev->xpon_service_lock);
  }
  
@@ -328,12 +328,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static netdev_tx_t __airoha_dev_xmit(struct sk_buff *skb,
  				     struct net_device *netdev,
 -				     const struct airoha_xpon_tx_info *xpon)
--{
--	struct airoha_gdm_dev *dev = netdev_priv(netdev);
 +				     const struct airoha_xpon_tx_info *xpon,
 +				     struct airoha_gdm_dev *dev,
 +				     const struct airoha_pon_ctrl_tx_info *ctrl)
-+{
+ {
+-	struct airoha_gdm_dev *dev = netdev_priv(netdev);
  	struct airoha_xpon_tx_info classified;
  	struct airoha_qdma_skb_meta skb_meta;
 -	bool xpon_oam = xpon && xpon->oam;
@@ -343,7 +342,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	u32 nr_frags, tag = 0, msg0, msg1, len;
  	struct airoha_queue_entry *e;
  	struct airoha_qdma *qdma;
-@@ -7502,7 +7706,7 @@
+@@ -7530,7 +7734,7 @@ static netdev_tx_t __airoha_dev_xmit(str
  	LIST_HEAD(tx_list);
  	int i = 0, qid, chn;
  	u16 index, queue_mapping;
@@ -352,7 +351,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	/* The AN7563 vendor active-Ethernet path submits at least 64 bytes to
  	 * QDMA1. In particular, pad ARP/DHCP frames before they enter the PSE;
-@@ -7518,6 +7722,15 @@
+@@ -7546,6 +7750,15 @@ static netdev_tx_t __airoha_dev_xmit(str
  
  	rcu_read_lock();
  	qdma = rcu_dereference(dev->qdma);
@@ -368,7 +367,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (!xpon && (dev->flags & AIROHA_PRIV_F_XPON_MANAGED) &&
  	    dev->xpon_mode == AIROHA_XPON_MODE_GPON) {
  		if (airoha_eth_xpon_classify(dev, skb, &classified))
-@@ -7535,6 +7748,8 @@
+@@ -7563,6 +7776,8 @@ static netdev_tx_t __airoha_dev_xmit(str
  	txq = skb_get_tx_queue(netdev, skb);
  	nr_frags = 1 + skb_shinfo(skb)->nr_frags;
  	if (q->queued + nr_frags >= q->ndesc) {
@@ -377,7 +376,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		netif_tx_stop_queue(txq);
  		q->txq_stopped = true;
  		spin_unlock_bh(&q->lock);
-@@ -7546,7 +7761,34 @@
+@@ -7574,7 +7789,34 @@ static netdev_tx_t __airoha_dev_xmit(str
  	/* Reserve ring space before changing the DSA header or TSO checksum.
  	 * A BUSY return must leave those fields intact for the next attempt.
  	 */
@@ -413,7 +412,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		if (!airoha_is(qdma->eth, airoha_en7523))
  			goto error_unlock;
  
-@@ -7610,13 +7852,16 @@
+@@ -7638,13 +7880,16 @@ static netdev_tx_t __airoha_dev_xmit(str
  		       FIELD_PREP(QDMA_ETH_TXMSG_METER_MASK, 0x7f);
  	else
  		msg1 = FIELD_PREP(QDMA_ETH_TXMSG_NBOQ_MASK,
@@ -431,7 +430,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (xpon_oam)
  		msg1 |= QDMA_ETH_TXMSG_NO_DROP;
  
-@@ -7634,14 +7879,14 @@
+@@ -7662,14 +7907,14 @@ static netdev_tx_t __airoha_dev_xmit(str
  			skb_frag_t *frag = &skb_shinfo(skb)->frags[i - 1];
  
  			len = skb_frag_size(frag);
@@ -449,14 +448,13 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			goto error_unmap;
  
  		list_move_tail(&e->list, &tx_list);
-@@ -7671,7 +7916,20 @@
+@@ -7700,7 +7945,20 @@ static netdev_tx_t __airoha_dev_xmit(str
  		i++;
  	}
  	q->queued += i;
--
 +	if (pon_data) {
 +		u8 channel = FIELD_GET(QDMA_ETH_TXMSG_CHAN_MASK, msg0);
-+
+ 
 +		atomic64_inc(&dev->pon_stats.tx_packets_submitted);
 +		atomic64_add(skb->len, &dev->pon_stats.tx_bytes_submitted);
 +		atomic64_inc(&dev->pon_stats.tx_channel_packets[channel]);
@@ -471,7 +469,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	skb_tx_timestamp(skb);
  	netdev_tx_sent_queue(txq, skb->len);
  	if (q->ndesc - q->queued < q->free_thr) {
-@@ -7707,11 +7965,13 @@
+@@ -7736,11 +7994,13 @@ error_unmap:
  error_unlock:
  	spin_unlock_bh(&q->lock);
  error:
@@ -486,7 +484,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	dev_kfree_skb_any(skb);
  	netdev->stats.tx_dropped++;
  	rcu_read_unlock();
-@@ -7727,7 +7987,7 @@
+@@ -7756,7 +8016,7 @@ static netdev_tx_t airoha_dev_xmit(struc
  	if (airoha_has_legacy_qdma(dev->eth))
  		return econet_qdma_xmit(skb, netdev);
  
@@ -495,7 +493,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  }
  
  static int airoha_xpon_xmit_oam(struct net_device *netdev, struct sk_buff *skb,
-@@ -7756,7 +8016,7 @@
+@@ -7785,7 +8045,7 @@ static int airoha_xpon_xmit_oam(struct n
  	 */
  	skb->dev = netdev;
  	skb_set_queue_mapping(skb, 7);
@@ -504,7 +502,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return ret == NETDEV_TX_BUSY ? -EBUSY : 0;
  }
  
-@@ -7833,6 +8093,9 @@
+@@ -7862,6 +8122,9 @@ airoha_ethtool_get_link_ksettings(struct
  	struct airoha_xpon_link_state state;
  	unsigned long flags;
  
@@ -514,7 +512,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (!(READ_ONCE(dev->flags) & AIROHA_PRIV_F_XPON_MANAGED))
  		return phylink_ethtool_ksettings_get(dev->common.phylink, cmd);
  
-@@ -7871,7 +8134,7 @@
+@@ -7900,7 +8163,7 @@ airoha_ethtool_set_link_ksettings(struct
  {
  	struct airoha_gdm_dev *dev = netdev_priv(netdev);
  
@@ -523,7 +521,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	return phylink_ethtool_ksettings_set(dev->common.phylink, cmd);
-@@ -7881,7 +8144,7 @@
+@@ -7910,7 +8173,7 @@ static int airoha_ethtool_nway_reset(str
  {
  	struct airoha_gdm_dev *dev = netdev_priv(netdev);
  
@@ -532,11 +530,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	return phylink_ethtool_nway_reset(dev->common.phylink);
-@@ -8774,6 +9037,255 @@
- 	.ndo_set_mac_address	= airoha_gdm_dev_set_macaddr,
+@@ -8827,6 +9090,255 @@ static const struct net_device_ops airoh
  	.ndo_setup_tc		= airoha_gdm_dev_tc_setup,
  };
-+
+ 
 +static void airoha_pon_read_datapath_stats(
 +	struct airoha_gdm_dev *dev, struct airoha_pon_datapath_stats *stats)
 +{
@@ -785,11 +782,12 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	rtnl_unlock();
 +}
 +EXPORT_SYMBOL_GPL(airoha_eth_pon_unregister_controller);
- 
++
  static const struct ethtool_ops airoha_ethtool_ops = {
  	.get_drvinfo		= airoha_eth_get_drvinfo,
-@@ -9107,6 +9619,15 @@
- 			dev->flags |= AIROHA_PRIV_F_WAN;
+ 	.get_eth_mac_stats	= airoha_ethtool_get_mac_stats,
+@@ -9167,6 +9679,15 @@ static int airoha_alloc_gdm_device(struc
+ 			set_bit(AIROHA_DEV_F_WAN, &dev->flags);
  	}
  
 +	if (of_property_read_bool(np, "airoha,pon-data-path")) {
@@ -803,8 +801,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	}
  	if (of_property_read_bool(np, "airoha,xpon-managed")) {
  		dev->flags |= AIROHA_PRIV_F_XPON_MANAGED;
- 		netdev->features |= NETIF_F_GRO_HW;
-@@ -9118,7 +9639,8 @@
+ 		netdev->features |= NETIF_F_LRO;
+@@ -9178,7 +9699,8 @@ static int airoha_alloc_gdm_device(struc
  	}
  	port->devs[index] = dev;
  
@@ -824,7 +822,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #include <linux/debugfs.h>
  #include <linux/etherdevice.h>
  #include <linux/if_vlan.h>
-@@ -993,6 +994,7 @@
+@@ -1004,6 +1005,7 @@ enum airoha_priv_flags {
  	AIROHA_PRIV_F_WAN = BIT(0),
  	AIROHA_PRIV_F_QOS = BIT(1),
  	AIROHA_PRIV_F_XPON_MANAGED = BIT(2),
@@ -832,7 +830,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  };
  
  #define AIROHA_XPON_OAM_RX_F_MIC_PRESENT	BIT(0)
-@@ -1071,6 +1073,50 @@
+@@ -1082,6 +1084,50 @@ struct airoha_xpon_tx_info {
  	bool oam;
  };
  
@@ -883,32 +881,32 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct airoha_gdm_dev {
  	/* Must stay first: shared GDM/phylink and PPE port metadata. */
  	struct airoha_gdm_common common;
-@@ -1095,6 +1141,12 @@
- 
- 	u32 flags;
+@@ -1108,6 +1154,12 @@ struct airoha_gdm_dev {
+ 	unsigned long flags;
  	int nbq;
-+
+ 
 +	u32 pon_qdma_tag;
 +	struct airoha_pon_flow_table __rcu *pon_flow_table;
 +	const struct airoha_pon_link_ops *pon_link_ops;
 +	void *pon_link_priv;
 +	struct airoha_pon_datapath_counters pon_stats;
- 
++
  	struct airoha_hw_stats stats;
+ 	spinlock_t *txq_lock;
  
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -878,6 +878,10 @@
- 
+@@ -879,6 +879,10 @@ static int airoha_ppe_foe_entry_prepare(
  			if (!eth->ppe_host_ops->is_valid_gdm_dev(eth, dev))
  				return -EINVAL;
-+
+ 
 +			/* PON bearer metadata is added by the dedicated PPE adapter. */
 +			if (dev->flags & AIROHA_PRIV_F_PON)
 +				return -EOPNOTSUPP;
- 
++
  			port = dev->port;
  			if (!port) {
+ 				dev_err(eth->dev, "GDM device without parent port during FOE prepare\n");
 --- a/drivers/net/ethernet/airoha/airoha_regs.h
 +++ b/drivers/net/ethernet/airoha/airoha_regs.h
 @@ -1038,6 +1038,13 @@

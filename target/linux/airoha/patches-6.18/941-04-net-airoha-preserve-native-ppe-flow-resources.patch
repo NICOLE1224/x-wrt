@@ -13,7 +13,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2419,7 +2419,7 @@
+@@ -2419,7 +2419,7 @@ static bool airoha_qdma_should_check_ppe
  	if (reason == AIROHA_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
  		return true;
  
@@ -22,18 +22,18 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return false;
  
  	return reason == AIROHA_PPE_CPU_REASON_HIT_UNBIND ||
-@@ -4988,8 +4988,6 @@
- 
+@@ -4989,8 +4989,6 @@ static int airoha_set_macaddr(struct air
  	airoha_fe_wr(eth, REG_FE_MAC_LMIN(reg), lmin);
  	airoha_fe_wr(eth, REG_FE_MAC_LMAX(reg), lmax);
--
--	airoha_ppe_init_upd_mem(dev, addr);
  
+-	airoha_ppe_init_upd_mem(dev, addr);
+-
  	return 0;
  }
+ 
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -569,6 +569,8 @@
+@@ -571,6 +571,8 @@ enum {
  
  #define AIROHA_FOE_MAC_SMAC_ID		GENMASK(20, 16)
  #define AIROHA_FOE_MAC_PPPOE_ID		GENMASK(15, 0)
@@ -42,7 +42,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #define AIROHA_FOE_MAC_WDMA_QOS		GENMASK(15, 12)
  #define AIROHA_FOE_MAC_WDMA_BAND	BIT(11)
-@@ -853,6 +855,7 @@
+@@ -855,6 +857,7 @@ struct airoha_flow_table_entry {
  
  	struct rhash_head node;
  	unsigned long cookie;
@@ -50,7 +50,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	/* FoE v1 binds a software flow to a hardware-created hash bucket on
  	 * RX. The same flow object is kept in the global cookie table; this
-@@ -1181,8 +1184,19 @@
+@@ -1183,9 +1186,20 @@ struct airoha_ppe_v1 {
  	bool armed;
  };
  
@@ -62,25 +62,26 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +
  struct airoha_ppe {
  	struct airoha_ppe_common common;
-+
+ 
 +	/* Protects SMAC slot references and UPDMEM DATA/CTRL transactions. */
 +	spinlock_t smac_lock;
 +	struct airoha_ppe_smac smac[AIROHA_PPE_SMAC_SLOTS];
 +	bool smac_failed;
- 
++
  	/* TC block ownership is common; only the v1 backend needs to arm the
  	 * engine on first bind and disarm it after the last user.
-@@ -1203,6 +1217,9 @@
- 	 * the airoha-npu module) on every flow.
+ 	 */
+@@ -1206,6 +1220,9 @@ struct airoha_ppe {
  	 */
  	bool offload_setup_done;
-+
+ 
 +	/* Physical FOE owners, distinct from tuple-hash lookup chains. */
 +	struct airoha_flow_table_entry **foe_owner;
- 
++
  	struct airoha_ppe_v1 v1;
  };
-@@ -1480,7 +1497,6 @@
+ 
+@@ -1482,7 +1499,6 @@ void airoha_ppe_check_skb(struct airoha_
  int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data);
  int airoha_ppe_init(struct airoha_eth *eth);
  void airoha_ppe_deinit(struct airoha_eth *eth);
@@ -130,7 +131,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct rhashtable_params airoha_flow_table_params = {
  	.head_offset = offsetof(struct airoha_flow_table_entry, node),
  	.key_offset = offsetof(struct airoha_flow_table_entry, cookie),
-@@ -46,13 +79,147 @@
+@@ -46,13 +79,147 @@ static int airoha_ppe_v1_flow_offload_de
  					       struct flow_cls_offload *f);
  static int airoha_ppe_v1_flow_offload_stats(struct flow_cls_offload *f);
  static void airoha_ppe_v1_hw_init(struct airoha_ppe *ppe);
@@ -279,7 +280,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		return -EOPNOTSUPP;
  
  	return ppe->common.eth->soc->ppe_stats_entries;
-@@ -94,10 +261,11 @@
+@@ -94,10 +261,11 @@ static int airoha_ppe_hw_to_sw_idx(struc
  				   u32 *sw_idx)
  {
  	u32 sram_num_entries = airoha_ppe_get_total_sram_num_entries(ppe);
@@ -293,7 +294,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		if (hw_idx >= ppe_num_entries)
  			return -ERANGE;
  
-@@ -123,17 +291,20 @@
+@@ -123,17 +291,20 @@ static u32 airoha_ppe_sw_to_hw_idx(struc
  {
  	u32 sram_num_entries = airoha_ppe_get_total_sram_num_entries(ppe);
  
@@ -317,7 +318,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  }
  
  bool airoha_ppe_is_enabled(struct airoha_eth *eth, int index)
-@@ -252,7 +423,58 @@
+@@ -252,7 +423,58 @@ static void airoha_ppe_hw_init(struct ai
  			 i, sram_ppe_num_data_entries, dram_num_entries, sram_num_stats_entries);
  
  		airoha_fe_wr(eth, REG_PPE_TB_BASE(i),
@@ -377,7 +378,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  		airoha_fe_rmw(eth, REG_PPE_BND_AGE0(i),
  			      PPE_BIND_AGE0_DELTA_NON_L4 |
-@@ -375,7 +597,8 @@
+@@ -375,7 +597,8 @@ static void airoha_ppe_hw_init(struct ai
  				      EN7581_PPE_DRAM_HASH1_MODE_MASK,
  				      FIELD_PREP(EN7581_PPE_SRAM_TABLE_EN_MASK, 1) |
  				      FIELD_PREP(EN7581_PPE_SRAM_HASH1_EN_MASK, 1) |
@@ -387,17 +388,17 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  				      FIELD_PREP(EN7581_PPE_SRAM_HASH0_MODE_MASK, 1) |
  				      FIELD_PREP(EN7581_PPE_SRAM_HASH1_MODE_MASK, 1) |
  				      FIELD_PREP(EN7581_PPE_DRAM_HASH0_MODE_MASK, 1) |
-@@ -418,6 +641,9 @@
- 		airoha_fe_wr(eth, REG_PPE_HASH_SEED(i), PPE_HASH_SEED);
+@@ -419,6 +642,9 @@ static void airoha_ppe_hw_init(struct ai
  		airoha_fe_clear(eth, REG_PPE_PPE_FLOW_CFG(i),
  				PPE_FLOW_CFG_IP6_6RD_MASK);
-+
+ 
 +		if (airoha_ppe_sram_only(eth))
 +			airoha_fe_wr(eth, REG_PPE_KEEPALIVE(i), AN7563_PPE_KEEPALIVE);
- 
++
  		/* Enable PPE */
  		airoha_fe_set(eth, REG_PPE_GLO_CFG(i), PPE_GLO_CFG_EN_MASK);
-@@ -608,7 +834,6 @@
+ 	}
+@@ -608,7 +834,6 @@ static int airoha_ppe_foe_entry_prepare(
  	int wlan_etype = -EINVAL, dsa_port = airoha_get_dsa_port(&netdev);
  	struct airoha_foe_mac_info_common *l2;
  	bool xpon_flow = false;
@@ -405,7 +406,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	memset(hwe, 0, sizeof(*hwe));
  
-@@ -623,9 +848,12 @@
+@@ -623,9 +848,12 @@ static int airoha_ppe_foe_entry_prepare(
  
  	/* EN7523 vendor entries use PORT_AG=0 (account group); mainline's 0x1f
  	 * yields ib2=0x3e240 vs the vendor's 0x240 for the same flow.
@@ -419,7 +420,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (netdev) {
  		struct airoha_wdma_info info = {};
  
-@@ -721,7 +949,6 @@
+@@ -721,7 +949,6 @@ static int airoha_ppe_foe_entry_prepare(
  				 port->id == AIROHA_GDM4_IDX)
  				val |= FIELD_PREP(AIROHA_FOE_IB2_NBQ, dev->nbq);
  
@@ -427,7 +428,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			dev_dbg(eth->dev,
  				 "foe_prepare: port_id=%d dev_nbq=%d dsa_port=%d ib2=%08x nbq=%lu xpon=%u gem=%u channel=%u queue=%u\n",
  				 port->id, dev->nbq, dsa_port, val,
-@@ -768,7 +995,8 @@
+@@ -768,7 +995,8 @@ static int airoha_ppe_foe_entry_prepare(
  		mac_info = (struct airoha_foe_mac_info *)l2;
  		mac_info->pppoe_id = data->pppoe.sid;
  	} else {
@@ -437,7 +438,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  				 FIELD_PREP(AIROHA_FOE_MAC_PPPOE_ID,
  					    data->pppoe.sid);
  	}
-@@ -906,12 +1134,12 @@
+@@ -906,12 +1134,12 @@ static u32 airoha_ppe_foe_get_entry_hash
  	hash ^= hv1 ^ hv2 ^ hv3;
  	hash ^= hash >> 16;
  
@@ -453,7 +454,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		 */
  		hash &= (dram_entries - 1);
  		hash += sram_entries;
-@@ -1215,6 +1443,8 @@
+@@ -1215,6 +1443,8 @@ static int airoha_ppe_foe_remove_flow(st
  		err = airoha_ppe_foe_commit_entry(ppe, &data, e->hash, false);
  		if (err)
  			return err;
@@ -462,7 +463,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		e->data = data;
  		e->hash = 0xffff;
  	}
-@@ -1276,6 +1506,9 @@
+@@ -1276,6 +1506,9 @@ airoha_ppe_foe_commit_subflow_entry(stru
  	struct airoha_flow_table_entry *f;
  	int type;
  
@@ -472,7 +473,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	hwe_p = airoha_ppe_foe_get_entry_locked(ppe, sw_idx);
  	if (!hwe_p) {
  		dev_err(ppe->common.eth->dev,
-@@ -1293,6 +1526,7 @@
+@@ -1293,6 +1526,7 @@ airoha_ppe_foe_commit_subflow_entry(stru
  	hlist_add_head(&f->l2_subflow_node, &e->l2_flows);
  	f->type = FLOW_TYPE_L2_SUBFLOW;
  	f->hash = sw_idx;
@@ -480,7 +481,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	memcpy(&hwe, hwe_p, sizeof(*hwe_p));
  	hwe.ib1 = (hwe.ib1 & mask) | (e->data.ib1 & ~mask);
-@@ -1686,9 +1920,9 @@
+@@ -1686,9 +1920,9 @@ static void airoha_ppe_foe_insert_entry(
  	    PPE_PKT_TYPE_BRIDGE)
  		goto l2_lookup;
  
@@ -493,7 +494,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		 * skb tuple rather than via foe_flow[index]. The HW may present
  		 * the slot either as INVALID (FOE_UNHIT) or as an auto-created
  		 * UNBIND entry (HIT_UNBIND, when SRAM auto-learn is active);
-@@ -1696,16 +1930,15 @@
+@@ -1696,16 +1930,15 @@ static void airoha_ppe_foe_insert_entry(
  		 */
  		e = airoha_ppe_find_pending_flow_by_skb(ppe, skb);
  		if (e) {
@@ -519,7 +520,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		}
  
  		goto unlock;
-@@ -1719,7 +1952,8 @@
+@@ -1719,7 +1952,8 @@ static void airoha_ppe_foe_insert_entry(
  		if (e->type == FLOW_TYPE_L2_SUBFLOW) {
  			state = FIELD_GET(AIROHA_FOE_IB1_BIND_STATE, hwe->ib1);
  			if (state != AIROHA_FOE_STATE_BIND) {
@@ -529,26 +530,26 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  				airoha_ppe_foe_remove_flow(ppe, e);
  			}
  			continue;
-@@ -1728,9 +1962,16 @@
+@@ -1728,9 +1962,16 @@ static void airoha_ppe_foe_insert_entry(
  		if (!airoha_ppe_foe_compare_entry(e, hwe))
  			continue;
  
+-		airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
+-		commit_done = true;
 +		/* One owner cannot safely release a MAC used by multiple slots. */
 +		if (e->hash != 0xffff && e->hash != sw_idx)
 +			continue;
 +		if (airoha_ppe_foe_slot_busy(ppe, e, sw_idx))
 +			continue;
-+		e->hash = sw_idx;
+ 		e->hash = sw_idx;
 +		airoha_ppe_foe_reserve_slot(ppe, e, sw_idx);
 +		commit_done = true;
- 		airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
--		commit_done = true;
--		e->hash = sw_idx;
++		airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
 +		break;
  	}
  
  	if (commit_done)
-@@ -1784,7 +2025,7 @@
+@@ -1784,7 +2025,7 @@ static int airoha_ppe_foe_flow_commit_en
  	e->hash = 0xffff;
  
  	spin_lock_bh(&ppe_lock);
@@ -557,7 +558,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		hlist_add_head(&e->list, &ppe->pending_flows);
  	else
  		hlist_add_head(&e->list, &ppe->foe_flow[hash]);
-@@ -1834,7 +2075,8 @@
+@@ -1834,7 +2075,8 @@ airoha_ppe_foe_flow_l2_entry_update(stru
  		ib1 = READ_ONCE(hwe->ib1);
  		state = FIELD_GET(AIROHA_FOE_IB1_BIND_STATE, ib1);
  		if (state != AIROHA_FOE_STATE_BIND) {
@@ -567,7 +568,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			airoha_ppe_foe_remove_flow(ppe, iter);
  			continue;
  		}
-@@ -1870,7 +2112,8 @@
+@@ -1870,7 +2112,8 @@ static void airoha_ppe_foe_flow_entry_up
  
  	memcpy(&hwe, hwe_p, sizeof(*hwe_p));
  	if (!airoha_ppe_foe_compare_entry(e, &hwe)) {
@@ -577,7 +578,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		goto unlock;
  	}
  
-@@ -2082,6 +2325,10 @@
+@@ -2082,6 +2325,10 @@ static int airoha_ppe_flow_offload_repla
  	e->cookie = f->cookie;
  	memcpy(&e->data, &hwe, sizeof(e->data));
  
@@ -588,7 +589,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	/* Publish software ownership before the RX path can bind the entry.
  	 * A failed table insert must never leave an unowned hardware flow.
  	 */
-@@ -2103,6 +2350,7 @@
+@@ -2103,6 +2350,7 @@ static int airoha_ppe_flow_offload_repla
  	return 0;
  
  free_entry:
@@ -596,7 +597,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	kfree(e);
  
  	return err;
-@@ -2122,6 +2370,7 @@
+@@ -2122,6 +2370,7 @@ static int airoha_ppe_flow_offload_destr
  	err = airoha_ppe_foe_flow_remove_entry(eth->ppe, e);
  	if (err)
  		return err;
@@ -604,7 +605,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	rhashtable_remove_fast(&eth->flow_table, &e->node,
  			       airoha_flow_table_params);
  	kfree(e);
-@@ -2270,7 +2519,8 @@
+@@ -2270,7 +2519,8 @@ static int airoha_ppe_offload_setup(stru
  		 */
  		if (!ppe->offload_setup_done) {
  			airoha_ppe_hw_init(ppe);
@@ -614,7 +615,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			dev_info(eth->dev,
  				 "PPE offload setup completed (no NPU, CPU-direct)\n");
  		}
-@@ -2361,28 +2611,6 @@
+@@ -2361,28 +2611,6 @@ void airoha_ppe_check_skb(struct airoha_
  	airoha_ppe_foe_insert_entry(ppe, skb, sw_idx, rx_wlan);
  }
  
@@ -643,7 +644,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct airoha_ppe_dev *airoha_ppe_get_dev(struct device *dev)
  {
  	struct platform_device *pdev;
-@@ -2495,6 +2723,7 @@
+@@ -2495,6 +2723,7 @@ static int airoha_ppe_datapath_init(stru
  	}
  
  	airoha_ppe_common_init(&ppe->common, eth, ppe);
@@ -651,11 +652,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	ppe->common.dev.ops.setup_tc_block_cb = airoha_ppe_setup_tc_block_cb;
  	ppe->common.dev.ops.check_skb = airoha_ppe_check_skb;
  	INIT_LIST_HEAD(&ppe->block_cb_list);
-@@ -2512,6 +2741,14 @@
- 	if (!ppe->foe_flow) {
+@@ -2513,6 +2742,14 @@ static int airoha_ppe_datapath_init(stru
  		dev_err(eth->dev, "OOM allocating FOE flows array\n");
  		return -ENOMEM;
-+	}
+ 	}
 +	if (airoha_is(eth, airoha_an7563, airoha_en7581, airoha_an7583)) {
 +		ppe->foe_owner = devm_kcalloc(eth->dev, ppe_num_entries,
 +					    sizeof(*ppe->foe_owner), GFP_KERNEL);
@@ -663,22 +663,24 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +			dev_err(eth->dev, "OOM allocating FOE ownership table\n");
 +			return -ENOMEM;
 +		}
- 	}
++	}
  
  	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
-@@ -2573,8 +2810,11 @@
+ 	if (ppe_num_stats_entries > 0) {
+@@ -2573,9 +2810,12 @@ error_flow_table_destroy:
  static void airoha_ppe_datapath_deinit(struct airoha_eth *eth)
  {
  	struct airoha_npu *npu;
 +	struct airoha_ppe *ppe = eth->ppe;
  
  	mutex_lock(&flow_offload_mutex);
-+
-+	WRITE_ONCE(ppe->offload_setup_done, false);
  
++	WRITE_ONCE(ppe->offload_setup_done, false);
++
  	npu = rcu_replace_pointer(eth->npu, NULL,
  				  lockdep_is_held(&flow_offload_mutex));
-@@ -2588,8 +2828,8 @@
+ 	if (npu) {
+@@ -2588,8 +2828,8 @@ static void airoha_ppe_datapath_deinit(s
  
  	mutex_unlock(&flow_offload_mutex);
  

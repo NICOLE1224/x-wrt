@@ -12,7 +12,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -8672,7 +8672,7 @@ static void airoha_mac_link_up(void *pri
+@@ -8694,7 +8694,7 @@ static void airoha_mac_link_up(void *pri
  		frag_size_rx = 0;
  	}
  
@@ -21,7 +21,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  
  	/* Configure TX/RX frag based on speed */
  	if (dev->nbq == 1) {
-@@ -8697,7 +8697,7 @@ static void airoha_mac_link_up(void *pri
+@@ -8719,7 +8719,7 @@ static void airoha_mac_link_up(void *pri
  	}
  	airoha_fe_rmw(eth, REG_FE_GDM4_RMBI_FRAG, mask, val);
  
@@ -30,7 +30,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  }
  
  /* Nothing to do in MAC, everything is handled in PCS. */
-@@ -8946,6 +8946,7 @@ static int airoha_alloc_gdm_port(struct
+@@ -8968,6 +8968,7 @@ static int airoha_alloc_gdm_port(struct
  
  	port->id = id;
  	spin_lock_init(&port->lock);
@@ -40,7 +40,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  	/* Metadata mux destinations belong to the modern descriptor path.
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -1084,8 +1084,10 @@ struct airoha_gdm_port {
+@@ -1086,8 +1086,10 @@ struct airoha_gdm_port {
  	int id;
  	int users;
  

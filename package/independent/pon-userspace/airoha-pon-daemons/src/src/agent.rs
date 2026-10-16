@@ -4,9 +4,9 @@ use std::env;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
-use crate::config::PonConfig;
+use crate::config::{PonConfig, Section};
 use crate::{oam, omci};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -18,12 +18,60 @@ enum Protocol {
     Oam,
 }
 
-fn protocol_for_mode(mode: &str) -> Protocol {
-    if mode.starts_with("epon-") {
-        Protocol::Oam
-    } else {
-        Protocol::Omci
+fn protocol_for_mode(mode: &str) -> io::Result<Protocol> {
+    match mode {
+        "epon-1g" | "epon-10g-1g" | "epon-10g-10g" => Ok(Protocol::Oam),
+        "gpon" | "xgpon" | "xgspon" => Ok(Protocol::Omci),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unknown PON line mode '{mode}'"),
+        )),
     }
+}
+
+fn resolve_mode(
+    line: &Section,
+    read_mode: impl FnOnce(&str) -> io::Result<String>,
+) -> io::Result<String> {
+    let configured = line.option("mode").unwrap_or("");
+    let mode = if configured.is_empty() {
+        read_mode(required_option(line, "device")?)?
+    } else {
+        configured.to_owned()
+    };
+    protocol_for_mode(&mode)?;
+    Ok(mode)
+}
+
+fn read_driver_mode(device: &str) -> io::Result<String> {
+    let output = Command::new("/usr/sbin/ponctl")
+        .args(["--device", device, "mode", "effective"])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "cannot read PON mode for {device}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        ));
+    }
+    let mode = std::str::from_utf8(&output.stdout)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    Ok(mode.trim().to_owned())
+}
+
+fn enable_control_interface(interface: &str) -> io::Result<()> {
+    let status = Command::new("ip")
+        .args(["link", "set", "dev", interface, "up"])
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("cannot bring up PON control interface {interface}: {status}"),
+        ));
+    }
+    Ok(())
 }
 
 fn control_socket(line: &str) -> PathBuf {
@@ -33,20 +81,19 @@ fn control_socket(line: &str) -> PathBuf {
 fn run_line(config_path: &Path, line_name: &str) -> io::Result<()> {
     let config = PonConfig::load(config_path)?;
     let line = config.section(line_name, "xpon")?;
-    let mode = line.option("mode").unwrap_or("");
+    let mode = resolve_mode(line, read_driver_mode)?;
     let socket = control_socket(line_name);
 
-    match protocol_for_mode(mode) {
+    match protocol_for_mode(&mode)? {
         Protocol::Omci => {
             let section = config.linked_section("omci", line_name)?;
             let interface = required_option(section, "device")?;
             let identity = omci::IdentityConfig::from_section(section);
             println!(
                 "PON agent selected OMCI: line={} interface={} mode={}",
-                line_name,
-                interface,
-                display_mode(mode)
+                line_name, interface, mode
             );
+            enable_control_interface(interface)?;
             omci::run_agent(interface, identity, &socket)
         }
         Protocol::Oam => {
@@ -55,10 +102,9 @@ fn run_line(config_path: &Path, line_name: &str) -> io::Result<()> {
             let oam_config = oam::OamConfig::from_section(section)?;
             println!(
                 "PON agent selected OAM: line={} interface={} mode={}",
-                line_name,
-                interface,
-                display_mode(mode)
+                line_name, interface, mode
             );
+            enable_control_interface(interface)?;
             oam::run_agent(interface, oam_config, &socket)
         }
     }
@@ -74,14 +120,6 @@ fn required_option<'a>(section: &'a crate::config::Section, name: &str) -> io::R
             ),
         )
     })
-}
-
-fn display_mode(mode: &str) -> &str {
-    if mode.is_empty() {
-        "driver-default"
-    } else {
-        mode
-    }
 }
 
 fn print_help(program: &str) {
@@ -200,14 +238,57 @@ mod tests {
 
     #[test]
     fn selects_oam_for_epon_modes() {
-        assert!(matches!(protocol_for_mode("epon-1g"), Protocol::Oam));
-        assert!(matches!(protocol_for_mode("epon-10g-1g"), Protocol::Oam));
-        assert!(matches!(protocol_for_mode("epon-10g-10g"), Protocol::Oam));
+        for mode in ["epon-1g", "epon-10g-1g", "epon-10g-10g"] {
+            assert!(matches!(protocol_for_mode(mode), Ok(Protocol::Oam)));
+        }
     }
 
     #[test]
-    fn selects_omci_for_xgpon_and_driver_default() {
-        assert!(matches!(protocol_for_mode("xgpon"), Protocol::Omci));
-        assert!(matches!(protocol_for_mode(""), Protocol::Omci));
+    fn selects_omci_for_itu_modes() {
+        for mode in ["gpon", "xgpon", "xgspon"] {
+            assert!(matches!(protocol_for_mode(mode), Ok(Protocol::Omci)));
+        }
+    }
+
+    #[test]
+    fn inherits_driver_mode_for_empty_or_missing_uci_mode() {
+        for option in ["", "\toption mode ''\n"] {
+            let config = PonConfig::parse(&format!(
+                "config xpon 'line0'\n\toption device 'pon1'\n{option}"
+            ))
+            .unwrap();
+            let line = config.section("line0", "xpon").unwrap();
+            for mode in ["epon-10g-1g", "xgpon"] {
+                let resolved = resolve_mode(line, |device| {
+                    assert_eq!(device, "pon1");
+                    Ok(mode.to_owned())
+                })
+                .unwrap();
+                assert_eq!(resolved, mode);
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_mode_does_not_query_the_driver() {
+        let config =
+            PonConfig::parse("config xpon 'line0'\n\toption mode 'epon-10g-1g'\n").unwrap();
+        let resolved = resolve_mode(config.section("line0", "xpon").unwrap(), |_| {
+            panic!("explicit mode must not query the driver")
+        })
+        .unwrap();
+        assert_eq!(resolved, "epon-10g-1g");
+    }
+
+    #[test]
+    fn missing_or_invalid_driver_mode_does_not_fall_back_to_omci() {
+        let config =
+            PonConfig::parse("config xpon 'line0'\n\toption device 'pon0'\n\toption mode ''\n")
+                .unwrap();
+        let line = config.section("line0", "xpon").unwrap();
+        assert!(resolve_mode(line, |_| Err(io::Error::from(io::ErrorKind::NotFound))).is_err());
+        for mode in ["", "none", "epon-unknown"] {
+            assert!(resolve_mode(line, |_| Ok(mode.to_owned())).is_err());
+        }
     }
 }

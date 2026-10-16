@@ -1,10 +1,14 @@
 From: PTPT52.AI <ptpt52@gmail.com>
 Date: Fri, 25 Sep 2026 15:03:00 +0800
-Subject: [PATCH] net: airoha: add xPON datapath support
+Subject: [PATCH] net: airoha: stage built-in xPON V1 sources
 
 Add the Airoha xPON datapath coordinator together with GPON OMCI and
 PLOAM transport backends.  Connect the control paths to the Ethernet GDM
 device and expose the required xPON service operations.
+
+Keep this built-in xPON V1 snapshot behind BROKEN until its optical
+frontend and xPON framework dependencies are available. Register its
+Kconfig and object rules together with the implementation.
 
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
@@ -6098,3 +6102,44 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +
 +
 +#endif /* _AIROHA_XPON_H */
+--- a/drivers/net/ethernet/airoha/Kconfig
++++ b/drivers/net/ethernet/airoha/Kconfig
+@@ -48,4 +48,28 @@ config NET_AIROHA_FLOW_STATS
+ 	help
+ 	  Enable Airoha flowtable statistic counters.
+ 
++config AIROHA_XPON_V1
++	tristate "Airoha/EcoNet xPON MAC driver"
++	depends on BROKEN
++	depends on ARCH_AIROHA || ECONET || COMPILE_TEST
++	depends on NET_AIROHA
++	depends on OF
++	depends on SFP
++	depends on OPTICAL_FRONTEND || OPTICAL_FRONTEND=n
++	depends on MFD_SYSCON
++	select PHY_AIROHA_XPON
++	select XPON
++	select XPON_OMCI
++	select XPON_OAM
++	help
++	  Driver for the shared xPON MAC complex found in Airoha/EcoNet SoCs.
++	  GPON and EPON are implemented by one platform driver and selected by
++	  the airoha,pon-mode device-tree property. GPON includes ITU-T G.984.3
++	  activation/PLOAM and uses the in-kernel OMCI agent; EPON includes
++	  IEEE 802.3 MPCP LLID registration and security support.
++
++	  This source snapshot requires optical frontend and xPON framework
++	  interfaces which are not available in this kernel. Keep it disabled
++	  until the matching framework dependencies are integrated.
++
+ endif # NET_VENDOR_AIROHA
+--- a/drivers/net/ethernet/airoha/Makefile
++++ b/drivers/net/ethernet/airoha/Makefile
+@@ -8,3 +8,7 @@ airoha-eth-y := airoha_eth.o airoha_ppe.
+ airoha-eth-$(CONFIG_NET_AIROHA_PPE_DEBUGFS) += airoha_ppe_debugfs.o
+ 
+ obj-$(CONFIG_NET_AIROHA_NPU) += airoha_npu.o
++
++# Airoha/EcoNet shared GPON + EPON MAC complex.
++obj-$(CONFIG_AIROHA_XPON_V1) += airoha-xpon.o
++airoha-xpon-y := airoha_xpon.o airoha_ploam.o airoha_gpon_omci.o

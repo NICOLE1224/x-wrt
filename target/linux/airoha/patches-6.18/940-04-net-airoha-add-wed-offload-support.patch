@@ -1,10 +1,14 @@
 From: PTPT52.AI <ptpt52@gmail.com>
 Date: Fri, 25 Sep 2026 15:04:00 +0800
-Subject: [PATCH] net: airoha: add WED offload support
+Subject: [PATCH] net: airoha: stage WED v1 sources
 
 Implement the MediaTek WED operations needed to offload Wi-Fi transmit
 traffic through the Airoha generation-1 WED and WDMA blocks.  Add
 debugfs state for rings, interrupts, and hardware counters.
+
+Keep this WED V1 snapshot behind BROKEN until its matching MediaTek
+private API is available. Register its Kconfig and object rules together
+with the implementation.
 
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
@@ -1852,3 +1856,39 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	debugfs_create_file_unsafe("txinfo", 0400, dir, hw,
 +				   &wed_txinfo_fops);
 +}
+--- a/drivers/net/ethernet/airoha/Kconfig
++++ b/drivers/net/ethernet/airoha/Kconfig
+@@ -48,6 +48,23 @@ config NET_AIROHA_FLOW_STATS
+ 	help
+ 	  Enable Airoha flowtable statistic counters.
+ 
++config NET_AIROHA_SOC_WED
++	bool "Airoha WED v1 support"
++	depends on BROKEN
++	depends on NET_AIROHA && PCI
++	select NET_MEDIATEK_WED_COMMON
++	help
++	  Enable WiFi Ethernet Datapath (WED) hardware offload for the
++	  EN751221, EN7528 and EN7523 SoCs. When enabled, mt76 WiFi drivers can
++	  offload wireless transmit processing through the WED engine rather
++	  than taking the CPU path.
++
++	  If unsure, say N.
++
++	  This source snapshot requires a matching MediaTek WED private API
++	  which is not available in this kernel. Keep it disabled until that
++	  dependency is integrated.
++
+ config AIROHA_XPON_V1
+ 	tristate "Airoha/EcoNet xPON MAC driver"
+ 	depends on BROKEN
+--- a/drivers/net/ethernet/airoha/Makefile
++++ b/drivers/net/ethernet/airoha/Makefile
+@@ -6,6 +6,7 @@
+ obj-$(CONFIG_NET_AIROHA) += airoha-eth.o
+ airoha-eth-y := airoha_eth.o airoha_ppe.o
+ airoha-eth-$(CONFIG_NET_AIROHA_PPE_DEBUGFS) += airoha_ppe_debugfs.o
++airoha-eth-$(CONFIG_NET_AIROHA_SOC_WED) += airoha_wed.o airoha_wed_debugfs.o
+ 
+ obj-$(CONFIG_NET_AIROHA_NPU) += airoha_npu.o
+ 

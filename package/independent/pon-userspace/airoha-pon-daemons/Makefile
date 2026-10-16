@@ -4,7 +4,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=airoha-pon-daemons
 PKG_VERSION:=0.3.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_URL:=https://github.com/pbs05/openwrt-pon-userspace/tree/main/airoha-pon-daemons
 
 PKG_LICENSE:=GPL-2.0-only
@@ -20,7 +20,8 @@ define Package/airoha-pond
   CATEGORY:=Network
   SUBMENU:=PON
   TITLE:=Airoha OMCI and OAM agent
-  DEPENDS:=$(RUST_ARCH_DEPENDS) +kmod-airoha-xpon +ip-full
+  DEPENDS:=$(RUST_ARCH_DEPENDS) +kmod-airoha-xpon +airoha-ponctl +ip-full
+  EXTRA_DEPENDS:=airoha-ponctl (>=0.2.0-r2)
 endef
 
 define Package/airoha-pond/description

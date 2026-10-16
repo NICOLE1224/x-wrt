@@ -13,7 +13,7 @@ Signed-off-by: liujixings <liujixings@outlook.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -632,6 +632,26 @@ struct airoha_foe_bridge {
+@@ -634,6 +634,26 @@ struct airoha_foe_bridge {
  	struct airoha_foe_mac_info l2;
  };
  
@@ -40,7 +40,7 @@ Signed-off-by: liujixings <liujixings@outlook.com>
  struct airoha_foe_ipv4_tuple {
  	u32 src_ip;
  	u32 dest_ip;
-@@ -706,6 +726,7 @@ struct airoha_foe_entry {
+@@ -708,6 +728,7 @@ struct airoha_foe_entry {
  			u32 ib1;
  			union {
  				struct airoha_foe_bridge bridge;
@@ -48,7 +48,7 @@ Signed-off-by: liujixings <liujixings@outlook.com>
  				struct airoha_foe_ipv4 ipv4;
  				struct airoha_foe_ipv4_dslite dslite;
  				struct airoha_foe_ipv6 ipv6;
-@@ -717,6 +738,12 @@ struct airoha_foe_entry {
+@@ -719,6 +740,12 @@ struct airoha_foe_entry {
  	};
  };
  

@@ -97,7 +97,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-		/* FiberHome BDBOB retains its 2048-byte binary format. */
+		/* FiberHome Factory converts stock BDBOB to this 2048-byte APONCAL cell. */
 		pon_calibration: calibration@0 {
 			reg = <0x0000 0x0800>;
 		};

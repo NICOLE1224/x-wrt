@@ -53,6 +53,16 @@ config oam 'line0_oam'
 
 `mode` 支持 `xgpon`、`xgspon`、`epon-10g-1g` 和 `epon-10g-10g`。空值使用驱动当前模式。`omcc_version` 支持 `0xb0` 和 `0x86`。
 
+When `mode` is empty, the agent uses `ponctl --device DEVICE mode effective`:
+the active line mode takes precedence over a pending configuration; before the
+line starts, the configured kernel mode is used. This also applies when running
+the agent directly. The agent brings up the matching OMCI or OAM control
+interface. An unavailable or unknown mode is an error and is retried by procd.
+
+`mode` 为空时，代理通过 `ponctl` 读取内核有效模式：线路运行期间使用活动模式，
+线路启动前使用内核配置模式，并启动对应的 OMCI 或 OAM 控制接口。直接运行代理
+也遵循相同行为；模式查询失败时报告错误，由 procd 重试。
+
 `alloc_id_timeout` is the number of seconds an OMCI data path may wait for PLOAM to assign its Alloc-ID before the data path state becomes `alloc-id-timeout`. The kernel keeps the request, so a later assignment still applies it. `0` disables the timeout.
 
 `alloc_id_timeout` 是 OMCI 数据通道等待 PLOAM 分配 Alloc-ID 的秒数，超时后数据通道状态变为 `alloc-id-timeout`。内核仍保留该请求，之后分配到时照常生效。`0` 表示不超时。

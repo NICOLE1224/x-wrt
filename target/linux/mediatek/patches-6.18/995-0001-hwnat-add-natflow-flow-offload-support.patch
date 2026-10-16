@@ -2300,7 +2300,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #endif
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
-@@ -1972,7 +1972,7 @@
+@@ -1972,7 +1972,7 @@ mtk_wed_wdma_tx_ring_setup(struct mtk_we
  	return 0;
  }
  
@@ -2309,7 +2309,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  mtk_wed_ppe_check(struct mtk_wed_device *dev, struct sk_buff *skb,
  		  u32 reason, u32 hash)
  {
-@@ -1980,15 +1980,26 @@
+@@ -1980,15 +1980,26 @@ mtk_wed_ppe_check(struct mtk_wed_device
  	struct ethhdr *eh;
  
  	if (!skb)
@@ -2576,17 +2576,17 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/linux/soc/mediatek/mtk_wed.h
 +++ b/include/linux/soc/mediatek/mtk_wed.h
-@@ -7,6 +7,9 @@
- #include <linux/pci.h>
+@@ -8,6 +8,9 @@
  #include <linux/skbuff.h>
  #include <linux/netdevice.h>
-+
+ 
 +/* ppe_check returns true for control copies the caller must drop. */
 +#define MTK_WED_PPE_CHECK_RETURNS_BOOL
- 
++
  #define MTK_WED_TX_QUEUES		2
  #define MTK_WED_RX_QUEUES		2
-@@ -203,7 +206,7 @@
+ #define MTK_WED_RX_PAGE_QUEUES		3
+@@ -203,7 +206,7 @@ struct mtk_wed_ops {
  	int (*msg_update)(struct mtk_wed_device *dev, int cmd_id,
  			  void *data, int len);
  	void (*detach)(struct mtk_wed_device *dev);
@@ -2595,7 +2595,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			  u32 reason, u32 hash);
  
  	void (*stop)(struct mtk_wed_device *dev);
-@@ -319,7 +322,7 @@
+@@ -319,7 +322,7 @@ static inline bool mtk_wed_device_active
  #define mtk_wed_device_irq_get(_dev, _mask) 0
  #define mtk_wed_device_irq_set_mask(_dev, _mask) do {} while (0)
  #define mtk_wed_device_rx_ring_setup(_dev, _ring, _regs, _reset) -ENODEV

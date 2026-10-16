@@ -11,7 +11,7 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
 ---
 --- a/drivers/pinctrl/airoha/pinctrl-an7581.c
 +++ b/drivers/pinctrl/airoha/pinctrl-an7581.c
-@@ -378,6 +378,14 @@
+@@ -378,6 +378,14 @@ static struct pinctrl_pin_desc pinctrl_p
  };
  
  static const int pon_pins[] = { 49, 50, 51, 52, 53, 54 };
@@ -26,7 +26,7 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
  static const int pon_tod_1pps_pins[] = { 46 };
  static const int gsw_tod_1pps_pins[] = { 46 };
  static const int sipo_pins[] = { 16, 17 };
-@@ -470,6 +478,7 @@
+@@ -470,6 +478,7 @@ static const int pcie_reset2_pins[] = {
  
  static const struct pingroup pinctrl_groups[] = {
  	PINCTRL_PIN_GROUP("pon", pon),
@@ -34,7 +34,7 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
  	PINCTRL_PIN_GROUP("pon_tod_1pps", pon_tod_1pps),
  	PINCTRL_PIN_GROUP("gsw_tod_1pps", gsw_tod_1pps),
  	PINCTRL_PIN_GROUP("sipo", sipo),
-@@ -557,7 +566,9 @@
+@@ -557,7 +566,9 @@ static const struct pingroup pinctrl_gro
  	PINCTRL_PIN_GROUP("pcie_reset2", pcie_reset2),
  };
  
@@ -45,18 +45,18 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
  static const char *const tod_1pps_groups[] = {
  	"pon_tod_1pps", "gsw_tod_1pps"
  };
-@@ -630,6 +641,14 @@
- 			REG_GPIO_PON_MODE,
- 			GPIO_PON_MODE_MASK,
- 			GPIO_PON_MODE_MASK
-+		},
-+		.regmap_size = 1,
-+	},
+@@ -633,6 +644,14 @@ static const struct airoha_pinctrl_func_
+ 		},
+ 		.regmap_size = 1,
+ 	},
 +	{
 +		.name = "pon_tx_disable_gpio",
 +		.regmap[0] = {
 +			AIROHA_FUNC_MUX, REG_GPIO_PON_MODE,
 +			GPIO_PON_MODE_MASK, GPIO_PON_MODE_MASK
- 		},
- 		.regmap_size = 1,
- 	},
++		},
++		.regmap_size = 1,
++	},
+ };
+ 
+ static const struct airoha_pinctrl_func_group tod_1pps_func_group[] = {

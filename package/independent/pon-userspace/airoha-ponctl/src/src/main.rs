@@ -241,6 +241,7 @@ fn print_help() {
          \x20 ponctl [--device ponX] status [--json]\n\
          \x20 ponctl [--device ponX] control|identity\n\
          \x20 ponctl [--device ponX] mode [show]\n\
+         \x20 ponctl [--device ponX] mode effective\n\
          \x20 ponctl [--device ponX] mode set MODE\n\
          \x20 ponctl [--device ponX] identity set [--serial SN] [--registration-id ID]\n\
          \x20 ponctl [--device ponX] data-path [show]"
@@ -309,6 +310,10 @@ fn run() -> Result<()> {
             for control in associated_controls(&device)? {
                 println!("{control}");
             }
+        }
+        "mode" if arguments.len() == 2 && arguments[1] == "effective" => {
+            let state = netlink::get_line(line_ifindex(&device)?)?;
+            println!("{}", state.effective_mode().name());
         }
         "mode" if arguments.len() == 1 || arguments.get(1).map(String::as_str) == Some("show") => {
             if arguments.len() > 2 {

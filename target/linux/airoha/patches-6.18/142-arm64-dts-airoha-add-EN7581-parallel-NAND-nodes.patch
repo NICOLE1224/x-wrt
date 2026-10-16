@@ -12,12 +12,10 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
 ---
 --- a/arch/arm64/boot/dts/airoha/en7581.dtsi
 +++ b/arch/arm64/boot/dts/airoha/en7581.dtsi
-@@ -171,6 +171,35 @@
- 				spi-tx-bus-width = <1>;
- 				spi-rx-bus-width = <2>;
+@@ -173,6 +173,35 @@
  			};
-+		};
-+
+ 		};
+ 
 +		pnand: nand-controller@1fa11000 {
 +			compatible = "airoha,en7581-nfc";
 +			reg = <0x0 0x1fa11000 0x0 0x580>;
@@ -45,6 +43,8 @@ Signed-off-by: pbs05 <27010143+pbs05@users.noreply.github.com>
 +			clock-names = "nfiecc_clk";
 +
 +			status = "disabled";
- 		};
- 
++		};
++
  		scuclk: clock-controller@1fb00000 {
+ 			compatible = "airoha,en7581-scu";
+ 			reg = <0x0 0x1fb00000 0x0 0x970>;
