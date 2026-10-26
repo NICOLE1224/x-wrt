@@ -17,6 +17,9 @@ mt76 consumes them after accounting. Validate the PPE bank and hash
 before reading counters. Keep WED RX to software-only external outputs
 in software because that path has no natflow translated-packet handoff.
 
+Initialize the forwarding-path context before resolving WDMA paths for
+the context-based dev_fill_forward_path() interface.
+
 Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
  drivers/net/ethernet/mediatek/Makefile           |    2
@@ -25,7 +28,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  drivers/net/ethernet/mediatek/mtk_ppe.h          |   47 +
  drivers/net/ethernet/mediatek/mtk_ppe1.c         |  906 ++++++++++++++++++++++
  drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c  |    9
- drivers/net/ethernet/mediatek/mtk_ppe_offload1.c |  736 ++++++++++++++++++
+ drivers/net/ethernet/mediatek/mtk_ppe_offload1.c |  740 ++++++++++++++++++
  drivers/net/ethernet/mediatek/mtk_ppe_regs.h     |   13
  drivers/net/ethernet/mediatek/mtk_wed.c          |   65 +-
  drivers/net/ethernet/mediatek/mtk_wed.h          |    5
@@ -39,7 +42,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  net/bridge/br_device.c                           |   22 +
  net/core/dev.c                                   |    6
  net/dsa/user.c                                   |   46 +
- 20 files changed, 2182 insertions(+), 55 deletions(-)
+ 20 files changed, 2186 insertions(+), 55 deletions(-)
  create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe1.c
  create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
 
@@ -1532,7 +1535,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return 0;
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-@@ -0,0 +1,736 @@
+@@ -0,0 +1,740 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + *  Copyright (C) 2020 Felix Fietkau <nbd@nbd.name>
@@ -1643,6 +1646,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +mtk_flow_get_wdma_info(struct net_device *dev, const u8 *addr, struct mtk_wdma_info *info)
 +{
 +	struct net_device_path_stack stack;
++	struct net_device_path_ctx ctx = {
++		.dev = dev,
++	};
 +	struct net_device_path *path;
 +	int err;
 +
@@ -1652,7 +1658,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	if (!IS_ENABLED(CONFIG_NET_MEDIATEK_SOC_WED))
 +		return -1;
 +
-+	err = dev_fill_forward_path(dev, addr, &stack);
++	ether_addr_copy(ctx.daddr, addr);
++	err = dev_fill_forward_path(&ctx, &stack);
 +	if (err)
 +		return err;
 +
@@ -2552,7 +2559,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  /* Backlog congestion levels */
  #define NET_RX_SUCCESS		0	/* keep 'em coming, baby */
  #define NET_RX_DROP		1	/* packet dropped */
-@@ -1611,6 +1630,11 @@ struct net_device_ops {
+@@ -1614,6 +1633,11 @@ struct net_device_ops {
  	int			(*ndo_bridge_dellink)(struct net_device *dev,
  						      struct nlmsghdr *nlh,
  						      u16 flags);
@@ -2606,7 +2613,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define mtk_wed_device_dma_reset(_dev) do {} while (0)
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -188,6 +188,63 @@ struct flow_offload {
+@@ -191,6 +191,63 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
  };
  

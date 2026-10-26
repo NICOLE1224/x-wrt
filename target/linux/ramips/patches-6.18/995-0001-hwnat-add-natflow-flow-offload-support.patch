@@ -12,6 +12,9 @@ Support the YT922x four-byte tag using the full 16-bit port control word
 as the outer VLAN TCI. Reject native eight-byte tags and VLAN-filtering
 ports whose access PVID policy cannot be reproduced by this PPE path.
 
+Initialize the forwarding-path context before resolving WDMA paths for
+the context-based dev_fill_forward_path() interface.
+
 Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
  drivers/net/ethernet/mediatek/Makefile           |   2 +-
@@ -20,7 +23,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  drivers/net/ethernet/mediatek/mtk_ppe.h          |  47 +-
  drivers/net/ethernet/mediatek/mtk_ppe1.c         | 906 ++++++++++++++++++++
  .../net/ethernet/mediatek/mtk_ppe_debugfs.c      |   9 +-
- .../net/ethernet/mediatek/mtk_ppe_offload1.c     | 707 +++++++++++++++++
+ .../net/ethernet/mediatek/mtk_ppe_offload1.c     | 711 +++++++++++++++++
  drivers/net/ethernet/mediatek/mtk_ppe_regs.h     |  13 +
  drivers/net/ethernet/mediatek/mtk_wed.c          |  56 +-
  drivers/net/ethernet/mediatek/mtk_wed.h          |   5 +
@@ -33,7 +36,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  net/bridge/br_device.c                           |  22 +
  net/core/dev.c                                   |   6 +
  net/dsa/user.c                                   |  46 ++
- 19 files changed, 2130 insertions(+), 51 deletions(-)
+ 19 files changed, 2134 insertions(+), 51 deletions(-)
  create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe1.c
  create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
 
@@ -1506,7 +1509,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return 0;
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-@@ -0,0 +1,707 @@
+@@ -0,0 +1,711 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + *  Copyright (C) 2020 Felix Fietkau <nbd@nbd.name>
@@ -1617,6 +1620,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +mtk_flow_get_wdma_info(struct net_device *dev, const u8 *addr, struct mtk_wdma_info *info)
 +{
 +	struct net_device_path_stack stack;
++	struct net_device_path_ctx ctx = {
++		.dev = dev,
++	};
 +	struct net_device_path *path;
 +	int err;
 +
@@ -1626,7 +1632,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	if (!IS_ENABLED(CONFIG_NET_MEDIATEK_SOC_WED))
 +		return -1;
 +
-+	err = dev_fill_forward_path(dev, addr, &stack);
++	ether_addr_copy(ctx.daddr, addr);
++	err = dev_fill_forward_path(&ctx, &stack);
 +	if (err)
 +		return err;
 +
@@ -2268,7 +2275,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  }
  
  static void
-@@ -2652,6 +2660,33 @@ out:
+@@ -2657,6 +2665,33 @@ out:
  	return ret;
  }
  
@@ -2302,7 +2309,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  void mtk_wed_flow_remove(int index)
  {
  	struct mtk_wed_hw *hw = hw_list[index];
-@@ -2674,6 +2709,7 @@ out:
+@@ -2679,6 +2714,7 @@ out:
  	mutex_unlock(&hw_lock);
  }
  
@@ -2310,7 +2317,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static int
  mtk_wed_setup_tc_block_cb(enum tc_setup_type type, void *type_data, void *cb_priv)
  {
-@@ -2767,6 +2803,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
+@@ -2772,6 +2808,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
  	default:
  		return -EOPNOTSUPP;
  	}
@@ -2481,7 +2488,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  /* Backlog congestion levels */
  #define NET_RX_SUCCESS		0	/* keep 'em coming, baby */
  #define NET_RX_DROP		1	/* packet dropped */
-@@ -1611,6 +1630,11 @@ struct net_device_ops {
+@@ -1614,6 +1633,11 @@ struct net_device_ops {
  	int			(*ndo_bridge_dellink)(struct net_device *dev,
  						      struct nlmsghdr *nlh,
  						      u16 flags);
@@ -2505,7 +2512,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -188,6 +188,63 @@ struct flow_offload {
+@@ -191,6 +191,63 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
  };
  
