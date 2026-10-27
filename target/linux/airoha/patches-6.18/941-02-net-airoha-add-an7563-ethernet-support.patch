@@ -24,6 +24,9 @@ and clear saved scatter metadata during queue teardown.
 Build RX skbs from the fragment base, then reserve the AN7563 headroom
 so skb_shared_info retains its required alignment.
 
+Limit interrupt status walks to two register groups on AN7563 and five
+on the other modern QDMA blocks, independently of the mask array size.
+
 Signed-off-by: X-WRT <dev@x-wrt.com>
 ---
 --- a/drivers/net/ethernet/airoha/Kconfig
@@ -79,8 +82,8 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
 +
 +static int airoha_qdma_num_irq_regs(struct airoha_qdma *qdma)
 +{
-+	return airoha_is(qdma->eth, airoha_an7563) ? 2 :
-+		ARRAY_SIZE(qdma->irq_banks[0].irqmask);
++	return airoha_is(qdma->eth, airoha_an7563) ? QDMA_INT_REG_IDX1 + 1 :
++		QDMA_INT_REG_IDX4 + 1;
 +}
 +
  static int airoha_qdma_fill_rx_queue(struct airoha_queue *q)
@@ -815,7 +818,7 @@ Signed-off-by: X-WRT <dev@x-wrt.com>
 +	.tx_ring = 8,
 +	.irq_banks = 2,
 +	.max_gdm_ports = 2,
-+	.pse_fq_cfg = PSE_FQ_CFG,
++	.pse_fq_cfg = PSE_FQ_CFG_LEGACY,
 +	.ppe_stats_entries = 0,
 +	.ppe_sram_entries = 512,
 +	.ppe_dram_entries = 16 * 1024,

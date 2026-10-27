@@ -6,10 +6,10 @@ Add the netdev/path ABI, paired flow lifecycle, QDMA injection and ACNT0
 accounting. Serialize atomic installation and paired removal with PON
 bearer replacement.
 
-Select SRAM-only CPU-directed PPE setup for AN7581/AN7583 while retaining
-NPU wireless queues. Connect mt76 wireless owner registration, learning,
-keepalive consumption and lifecycle invalidation through a capability
-macro; kernels without this patch retain the native TC/NPU interfaces.
+Use the base driver SRAM-only PPE policy for AN7563/AN7581/AN7583.
+Connect mt76 wireless owner registration, learning, keepalive consumption
+and lifecycle invalidation through a capability macro. Kernels without
+this patch retain the base SRAM-only policy and native TC interfaces.
 
 Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
@@ -220,7 +220,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  void airoha_ppe_deinit(struct airoha_eth *eth);
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -13,6 +13,7 @@
+@@ -14,6 +14,7 @@
  #include <net/ipv6.h>
  #include <net/flow_offload.h>
  #include <net/netlink.h>
@@ -228,7 +228,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #include <net/pkt_cls.h>
  #include <net/route.h>
  #include <uapi/linux/ppp_defs.h>
-@@ -35,7 +36,7 @@ static DEFINE_SPINLOCK(ppe_lock);
+@@ -36,7 +37,7 @@ static DEFINE_SPINLOCK(ppe_lock);
  #define AN7563_PPE_BIND_RATE		0x001e001e
  #define AN7563_PPE_BIND_LIMIT0		0x0fa00fa0
  #define AN7563_PPE_BIND_LIMIT1		0x00011f40
@@ -237,7 +237,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define AN7563_PPE_KEEPALIVE_SCANS	2
  #define AN7563_PPE_KEEPALIVE					\
  	(FIELD_PREP(PPE_KEEPALIVE_UDP_MASK, AN7563_PPE_KEEPALIVE_SCANS) | \
-@@ -59,6 +60,52 @@ static DEFINE_SPINLOCK(ppe_lock);
+@@ -60,6 +61,52 @@ static DEFINE_SPINLOCK(ppe_lock);
  #define AN7563_PPE_L2B_ETYPE0		0x88a88100
  #define AN7563_PPE_L2B_ETYPE1		0x08000000
  #define AN7563_PPE_L2B_ETYPE2		0x000086dd
@@ -290,7 +290,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct rhashtable_params airoha_flow_table_params = {
  	.head_offset = offsetof(struct airoha_flow_table_entry, node),
  	.key_offset = offsetof(struct airoha_flow_table_entry, cookie),
-@@ -79,9 +126,23 @@ static int airoha_ppe_v1_flow_offload_de
+@@ -80,12 +127,26 @@ static int airoha_ppe_v1_flow_offload_de
  					       struct flow_cls_offload *f);
  static int airoha_ppe_v1_flow_offload_stats(struct flow_cls_offload *f);
  static void airoha_ppe_v1_hw_init(struct airoha_ppe *ppe);
@@ -305,26 +305,19 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +
  static bool airoha_ppe_sram_only(struct airoha_eth *eth)
  {
--	return airoha_is(eth, airoha_an7563);
-+	return airoha_is(eth, airoha_an7563, airoha_en7581, airoha_an7583);
-+}
-+
+ 	/* Platform policy applies equally to TC and natflow control planes. */
+ 	return airoha_is(eth, airoha_an7563, airoha_en7581, airoha_an7583);
+ }
+ 
 +static u32 airoha_ppe_natflow_num_entries(struct airoha_ppe *ppe)
 +{
 +	return ppe->common.eth->soc->ppe_sram_entries;
- }
- 
++}
++
  static int airoha_ppe_smac_write(struct airoha_ppe *ppe, unsigned int id,
-@@ -218,7 +279,7 @@ static int airoha_ppe_get_num_stats_entr
- 	if (!IS_ENABLED(CONFIG_NET_AIROHA_FLOW_STATS))
- 		return -EOPNOTSUPP;
- 
--	/* AN7563 uses SRAM flows without an NPU statistics reservation. */
-+	/* SRAM is entirely reserved for flows in CPU-direct natflow mode. */
- 	if (airoha_ppe_sram_only(ppe->common.eth))
- 		return -EOPNOTSUPP;
- 
-@@ -858,7 +919,8 @@ static int airoha_ppe_pon_select_flow(st
+ 				 const u8 *addr)
+ {
+@@ -873,7 +934,8 @@ static int airoha_ppe_pon_select_flow(st
  	u16 vlan_id;
  	u8 pbit;
  
@@ -334,7 +327,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			 "PON flow lookup without configuration protection");
  
  	/* EPON uses the fixed LLID channel configured by the line controller. */
-@@ -869,7 +931,8 @@ static int airoha_ppe_pon_select_flow(st
+@@ -884,7 +946,8 @@ static int airoha_ppe_pon_select_flow(st
  	}
  
  	table = rcu_dereference_protected(dev->pon_flow_table,
@@ -344,7 +337,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (!table)
  		return -EOPNOTSUPP;
  
-@@ -936,8 +999,8 @@ static int airoha_ppe_foe_entry_prepare(
+@@ -951,8 +1014,8 @@ static int airoha_ppe_foe_entry_prepare(
  
  	/* EN7523 vendor entries use PORT_AG=0 (account group); mainline's 0x1f
  	 * yields ib2=0x3e240 vs the vendor's 0x240 for the same flow.
@@ -355,7 +348,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	 */
  	val = FIELD_PREP(AIROHA_FOE_IB2_PORT_AG,
  			 airoha_is(eth, airoha_en7523) ? 0x0 :
-@@ -1545,9 +1608,15 @@ static int airoha_ppe_foe_remove_flow(st
+@@ -1560,9 +1623,15 @@ static int airoha_ppe_foe_remove_flow(st
  		data.ib1 &= ~AIROHA_FOE_IB1_BIND_STATE;
  		data.ib1 |= FIELD_PREP(AIROHA_FOE_IB1_BIND_STATE,
  				       AIROHA_FOE_STATE_INVALID);
@@ -374,7 +367,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		if (ppe->foe_owner && ppe->foe_owner[e->hash] == e)
  			ppe->foe_owner[e->hash] = NULL;
  		e->data = data;
-@@ -2043,6 +2112,8 @@ static void airoha_ppe_foe_insert_entry(
+@@ -2058,6 +2127,8 @@ static void airoha_ppe_foe_insert_entry(
  			hlist_add_head(&e->list, &ppe->foe_flow[sw_idx]);
  			e->hash = sw_idx;
  			airoha_ppe_foe_reserve_slot(ppe, e, sw_idx);
@@ -383,7 +376,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
  		}
  
-@@ -2076,6 +2147,8 @@ static void airoha_ppe_foe_insert_entry(
+@@ -2091,6 +2162,8 @@ static void airoha_ppe_foe_insert_entry(
  		airoha_ppe_foe_reserve_slot(ppe, e, sw_idx);
  		commit_done = true;
  		airoha_ppe_foe_commit_entry(ppe, &e->data, sw_idx, rx_wlan);
@@ -392,7 +385,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  		break;
  	}
  
-@@ -2497,8 +2570,9 @@ int airoha_ppe_remove_egress_flows(struc
+@@ -2512,8 +2585,9 @@ int airoha_ppe_remove_egress_flows(struc
  	lockdep_assert_held(&flow_offload_mutex);
  	if (!eth->ppe)
  		return 0;
@@ -404,17 +397,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	rhashtable_walk_enter(&eth->flow_table, &iter);
  	rhashtable_walk_start(&iter);
  	while ((e = rhashtable_walk_next(&iter))) {
-@@ -2658,7 +2732,8 @@ static int airoha_ppe_wait_for_npu_init(
- 
- static int airoha_ppe_offload_setup(struct airoha_eth *eth)
- {
--	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
-+	struct airoha_npu *npu = airoha_is(eth, airoha_en7581, airoha_an7583) ?
-+				 ERR_PTR(-EOPNOTSUPP) : airoha_ppe_npu_get(eth);
- 	struct airoha_ppe *ppe = eth->ppe;
- 	int err, ppe_num_stats_entries;
- 
-@@ -2717,6 +2792,1231 @@ error_npu_put:
+@@ -2733,6 +2807,1231 @@ error_npu_put:
  	return err;
  }
  
@@ -1646,7 +1629,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
  {
  	struct airoha_ppe *ppe = dev->priv;
-@@ -2732,6 +4032,10 @@ int airoha_ppe_setup_tc_block_cb(struct
+@@ -2748,6 +4047,10 @@ int airoha_ppe_setup_tc_block_cb(struct
  
  	mutex_lock(&flow_offload_mutex);
  
@@ -1657,7 +1640,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (!eth->npu && !eth->ppe->offload_setup_done) {
  		dev_info(eth->dev, "NPU not attached, setting up offload\n");
  		err = airoha_ppe_offload_setup(eth);
-@@ -2863,7 +4167,7 @@ static void airoha_ppe_common_disable(st
+@@ -2896,7 +4199,7 @@ static void airoha_ppe_common_disable(st
  
  static int airoha_ppe_datapath_init(struct airoha_eth *eth)
  {
@@ -1666,7 +1649,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	u32 ppe_num_entries;
  	struct airoha_ppe *ppe;
  
-@@ -2878,8 +4182,14 @@ static int airoha_ppe_datapath_init(stru
+@@ -2911,8 +4214,14 @@ static int airoha_ppe_datapath_init(stru
  	spin_lock_init(&ppe->smac_lock);
  	ppe->common.dev.ops.setup_tc_block_cb = airoha_ppe_setup_tc_block_cb;
  	ppe->common.dev.ops.check_skb = airoha_ppe_check_skb;
@@ -1681,7 +1664,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	ppe_num_entries = airoha_ppe_get_total_num_entries(ppe);
  	foe_size = ppe_num_entries * AIROHA_FOE_ENTRY_SIZE;
-@@ -2894,13 +4204,24 @@ static int airoha_ppe_datapath_init(stru
+@@ -2927,13 +4236,24 @@ static int airoha_ppe_datapath_init(stru
  		dev_err(eth->dev, "OOM allocating FOE flows array\n");
  		return -ENOMEM;
  	}
@@ -1709,21 +1692,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	}
  
  	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
-@@ -2947,6 +4268,13 @@ static int airoha_ppe_datapath_init(stru
- 	}
- 
- 	eth->ppe = ppe;
-+	if (airoha_ppe_sram_only(eth)) {
-+		airoha_ppe_hw_init(ppe);
-+		dma_wmb();
-+		WRITE_ONCE(ppe->offload_setup_done, true);
-+		dev_info(eth->dev,
-+			 "PPE offload setup completed (SRAM-only, CPU-direct)\n");
-+	}
- 	airoha_ppe_common_enable(&ppe->common);
- 	dev_info(eth->dev, "PPE Initialization completed successfully\n");
- 	return 0;
-@@ -2964,6 +4292,8 @@ static void airoha_ppe_datapath_deinit(s
+@@ -3004,6 +4324,8 @@ static void airoha_ppe_datapath_deinit(s
  	struct airoha_npu *npu;
  	struct airoha_ppe *ppe = eth->ppe;
  

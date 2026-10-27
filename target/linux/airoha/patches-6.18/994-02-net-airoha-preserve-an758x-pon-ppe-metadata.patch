@@ -99,7 +99,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  bool airoha_ppe_is_enabled(struct airoha_eth *eth, int index);
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -823,18 +823,101 @@ airoha_ppe_xpon_get_tx_info(struct airoh
+@@ -843,18 +843,101 @@
  	return eth->ppe_host_ops->xpon_get_tx_info(netdev, false, 0, false, 0, info);
  }
  
@@ -195,14 +195,15 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	int wlan_etype = -EINVAL, dsa_port = airoha_get_dsa_port(&netdev);
  	struct airoha_foe_mac_info_common *l2;
  	bool xpon_flow = false;
+-
 +	u32 pon_tag = 0;
- 
++
 +	if (egress_dev)
 +		*egress_dev = NULL;
  	memset(hwe, 0, sizeof(*hwe));
  
  	val = FIELD_PREP(AIROHA_FOE_IB1_BIND_STATE, AIROHA_FOE_STATE_BIND) |
-@@ -879,9 +962,14 @@ static int airoha_ppe_foe_entry_prepare(
+@@ -899,9 +982,14 @@
  			if (!eth->ppe_host_ops->is_valid_gdm_dev(eth, dev))
  				return -EINVAL;
  
@@ -220,7 +221,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  			port = dev->port;
  			if (!port) {
-@@ -912,7 +1000,10 @@ static int airoha_ppe_foe_entry_prepare(
+@@ -932,7 +1020,10 @@
  			/* GPON hardware forwarding must carry the same T-CONT,
  			 * queue and NBOQ metadata as CPU-originated descriptors.
  			 */
@@ -232,7 +233,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  				channel = xpon.tcont;
  				priority = xpon.queue;
  			} else {
-@@ -944,7 +1035,9 @@ static int airoha_ppe_foe_entry_prepare(
+@@ -964,7 +1055,9 @@
  			if (!airoha_is(eth, airoha_en7523) &&
  			    airoha_is_lan_gdm_dev(dev))
  				val |= AIROHA_FOE_IB2_FAST_PATH;
@@ -243,7 +244,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  				val |= FIELD_PREP(AIROHA_FOE_IB2_NBQ, xpon.tcont);
  			else if (dsa_port >= 0)
  				val |= FIELD_PREP(AIROHA_FOE_IB2_NBQ,
-@@ -1016,6 +1109,9 @@ static int airoha_ppe_foe_entry_prepare(
+@@ -1036,6 +1129,9 @@
  	} else if (dsa_port >= 0) {
  		l2->etype = BIT(dsa_port);
  		l2->etype |= !data->vlan.num ? BIT(15) : 0;
@@ -253,7 +254,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	} else if (xpon_flow) {
  		/* EN7523 reuses the FOE EtherType field as the GPON GEM tag. */
  		l2->etype = xpon.gem_port_id;
-@@ -2139,6 +2235,7 @@ static int airoha_ppe_flow_offload_repla
+@@ -2159,6 +2255,7 @@
  {
  	struct flow_rule *rule = flow_cls_offload_flow_rule(f);
  	struct airoha_flow_table_entry *e;
@@ -261,7 +262,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	struct airoha_flow_data data = {};
  	struct net_device *odev = NULL;
  	struct flow_action_entry *act;
-@@ -2250,7 +2347,7 @@ static int airoha_ppe_flow_offload_repla
+@@ -2270,7 +2367,7 @@
  	}
  
  	err = airoha_ppe_foe_entry_prepare(eth, &hwe, odev, offload_type,
@@ -270,7 +271,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	if (err)
  		return err;
  
-@@ -2326,6 +2423,8 @@ static int airoha_ppe_flow_offload_repla
+@@ -2346,6 +2443,8 @@
  		return -ENOMEM;
  	}
  
@@ -279,10 +280,12 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	e->cookie = f->cookie;
  	memcpy(&e->data, &hwe, sizeof(e->data));
  
-@@ -2382,6 +2481,50 @@ static int airoha_ppe_flow_offload_destr
- 	return 0;
- }
+@@ -2400,6 +2499,50 @@
+ 	kfree(e);
  
+ 	return 0;
++}
++
 +int airoha_ppe_remove_egress_flows(struct airoha_gdm_dev *dev)
 +{
 +	struct airoha_eth *eth = dev->eth;
@@ -325,8 +328,6 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		kfree(e);
 +	}
 +	return err;
-+}
-+
+ }
+ 
  static int airoha_ppe_flow_offload_stats(struct airoha_eth *eth,
- 					 struct flow_cls_offload *f)
- {

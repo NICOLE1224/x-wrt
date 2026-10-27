@@ -95,8 +95,14 @@ natflow 后由接收方释放，不再进入普通 RX 转发。
   池耗尽时分配失败，不向不受约束的内存回退。PPE 传给 NPU 的外部
   缓冲区也须位于该窗口，否则拒绝对应 NPU 操作。
 - natflow 保持 8192 个逻辑槽、四路桶的 ABI。AN7581 的物理 PPE bank
-  映射沿用现有双 PPE 实现，AN7583 使用单 PPE；本轮未启用 16K DRAM
-  FOE 表。NPU 无线缓冲区在 DRAM 中，与 DRAM FOE 表用途不同。
+  映射沿用现有双 PPE 实现，AN7583 使用单 PPE。AN7563、AN7581、AN7583
+  均由基础驱动明确使用 SRAM-only、CPU-direct PPE，不启用 DRAM FOE
+  表或 NPU PPE 表控制与统计初始化；有无 995 均采用这项策略。NPU 无线
+  队列接口继续保留，其 DRAM 缓冲区与 DRAM FOE 表用途不同。
+- SRAM-only 模式清除 DRAM 流表使能、哈希、大小和基址，不分配 DRAM
+  流表，也不向硬件提供流表 DMA 地址。CPU 操作 SRAM 仍需普通内存中的
+  软件镜像：AN7583 为 640 KiB，AN7581 双 PPE 合计 1.25 MiB，AN7563 为
+  40 KiB；镜像通过 MMIO 同步到 SRAM，不供硬件 DMA 访问。
 - 无线输出方向没有 QDMA ACNT0 计数器，本轮保活只维护存活，不提供该
   方向精确硬件字节/包计数。依赖这些计数的限速或计费场景需要关闭无线
   直转，待接入相应 NPU 统计后再验证。
@@ -106,25 +112,33 @@ natflow 后由接收方释放，不再进入普通 RX 转发。
 基础驱动与 natflow 控制面按以下边界组织：
 
 - `941-04-*` 保留通用的 IPv6 源 MAC 引用、FOE 槽位保护及 AN7563 SRAM
-  安全配置；AN758x 原生 NPU、DRAM 和统计表配置继续可用。
+  配置。
+- `941-06-*` 统一确定 AN7563、AN7581、AN7583 的 SRAM-only、CPU-direct
+  策略，清除 DRAM 流表配置，并将 SRAM 软件镜像改为普通内存。这项
+  基础策略不依赖 995；其他使用 DRAM 流表的平台继续使用 DMA 流表。
 - `994-01-*` 至 `994-04-*` 提供 PON 数据与控制接口、PPE 出口分类、原生
   TC 撤流和光模块 provider 检查，不依赖 natflow。
 - `995-0001-hwnat-add-natflow-flow-offload-support.patch` 集中提供 natflow
-  ABI、收发包接入、成对撤流、ACNT0 统计和 NPU 无线控制面。添加它后，
-  natflow 可通过这些接口管理硬件流，AN758x 使用 SRAM 转发配置。
+  ABI、收发包接入、成对撤流、ACNT0 统计和 NPU 无线控制面，沿用基础
+  驱动已经确定的 SRAM-only 策略。
 
-仅移除 995 并重新构建时，基础以太网/PON 和原生 TC/NPU 转发接口仍然
-保留；mt76 根据 `AIROHA_PPE_NATFLOW_WLAN` 能力宏选择接口，无此宏时
-沿用原生 PPE 学习回调。natflow 运行时开关不会还原构建时选择的 PPE
-表配置。
+仅移除 995 并重新构建时，基础以太网/PON、原生 TC 和 NPU 无线队列
+接口仍然保留，三个平台仍使用 CPU-direct SRAM 流表。mt76 根据
+`AIROHA_PPE_NATFLOW_WLAN` 能力宏选择接口，无此宏时沿用原生 PPE 学习
+回调。natflow 运行时开关不改变基础驱动的流表策略。
 
 mt76 生命周期及接收处理已整合到 `mt76-20261016` 源码包；无线开关透传
 在独立 feeds/x 仓库的 `natflow/patches/100-*`。启用 natflow 无线接入时，
 内核、mt76 和 natflow 三者须配套使用。
 
-此次拆分分别验证有、无 995 两套补丁零 fuzz/零偏移回放，以及 ARM32/
+此前拆分分别验证有、无 995 两套补丁零 fuzz/零偏移回放，以及 ARM32/
 ARM64 的以太网、PPE、NPU、PON PCS 和路径相关对象编译；mt76 的 NPU
-对象也分别编译通过。包含 995 的展开源码与拆分前逐文件一致。
+对象也分别编译通过。
+
+本次 SRAM-only 策略整理验证了有、无 995 两套相关路径的零 fuzz 回放，
+新基础策略补丁与刷新后的 995 均可零偏移正反向回放，PPE 对象也分别
+通过 ARM64 编译。168 个主机模拟场景检查七款 SoC 的寄存器、分配及
+NPU PPE 接管路径；其他四个平台的原生寄存器写入序列保持不变。
 
 独立 WED 和内置 xPON V1 源码依赖的公共框架尚未齐备，Kconfig 通过
 `depends on BROKEN` 保持这两个选项不可选，待接入匹配的 MediaTek WED

@@ -20,6 +20,9 @@ Preserve the upstream atomic role flags, per-channel ETS counter baselines,
 and LRO skb metadata. Track assigned netdevs separately from DMA users,
 and retain the parent GDM completion lock for PON control skbs.
 
+Keep the native EN7581/AN7583 PSE free-queue register at 0x008c and
+select the legacy 0x014c register explicitly for EcoNet and AN7563.
+
 Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/Kconfig
@@ -9186,7 +9189,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	.legacy_qdma = true,
 +	.irq_banks = 1,
 +	.max_gdm_ports = 2,
-+	.pse_fq_cfg = PSE_FQ_CFG,
++	.pse_fq_cfg = PSE_FQ_CFG_LEGACY,
 +	.ppe_dram_entries = 16 * 1024,
 +	.foe_format = AIROHA_FOE_FORMAT_V1,
 +	.ppe_fport = EN751221_GDM_FPORT_PPE,
@@ -9207,7 +9210,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	.legacy_qdma = true,
 +	.irq_banks = 4,
 +	.max_gdm_ports = 2,
-+	.pse_fq_cfg = PSE_FQ_CFG,
++	.pse_fq_cfg = PSE_FQ_CFG_LEGACY,
 +	.ppe_dram_entries = 16 * 1024,
 +	.foe_format = AIROHA_FOE_FORMAT_V1,
 +	.ppe_fport = EN751221_GDM_FPORT_PPE,
@@ -9232,7 +9235,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	.ppe_sram_entries = 16 * 1024,
 +	.ppe_dram_entries = 16 * 1024,
 +	.foe_format = AIROHA_FOE_FORMAT_V2,
-+	.pse_fq_cfg = PSE_FQ_CFG,
++	.pse_fq_cfg = PSE_FQ_CFG_LEGACY,
 +	.ops = {
 +		.get_sport = airoha_en7580_get_sport,
 +		.get_dev_from_sport = airoha_en7580_get_dev_from_sport,
@@ -9296,7 +9299,7 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
 +	.num_ppe = 1,
 +	.irq_banks = 2,
 +	.max_gdm_ports = 3,
-+	.pse_fq_cfg = PSE_FQ_CFG_EN7523,
++	.pse_fq_cfg = PSE_FQ_CFG,
 +	.ppe_stats_entries = 0,
 +	/* The vendor PPE runs EN7523 in 80-byte FoE mode with 512 SRAM and
 +	 * 16K DRAM entries.
@@ -14338,13 +14341,11 @@ Signed-off-by: PTPT52.AI <ptpt52@gmail.com>
  #define REG_FE_FOE_TS			0x0010
  
  #define REG_FE_WAN_PORT			0x0024
-@@ -71,7 +119,8 @@
- #define REG_FE_PSE_QUEUE_CFG_VAL	0x0084
+@@ -72,6 +120,7 @@
  #define PSE_CFG_OQ_RSV_MASK		GENMASK(13, 0)
  
--#define PSE_FQ_CFG			0x008c
-+#define PSE_FQ_CFG			0x014c
-+#define PSE_FQ_CFG_EN7523		0x008c
+ #define PSE_FQ_CFG			0x008c
++#define PSE_FQ_CFG_LEGACY		0x014c
  #define PSE_FQ_LIMIT_MASK		GENMASK(14, 0)
  
  #define REG_FE_PSE_BUF_SET		0x0090

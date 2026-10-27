@@ -896,17 +896,17 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -879,6 +879,10 @@ static int airoha_ppe_foe_entry_prepare(
+@@ -898,6 +898,10 @@
+ 
  			if (!eth->ppe_host_ops->is_valid_gdm_dev(eth, dev))
  				return -EINVAL;
- 
++
 +			/* PON bearer metadata is added by the dedicated PPE adapter. */
 +			if (dev->flags & AIROHA_PRIV_F_PON)
 +				return -EOPNOTSUPP;
-+
+ 
  			port = dev->port;
  			if (!port) {
- 				dev_err(eth->dev, "GDM device without parent port during FOE prepare\n");
 --- a/drivers/net/ethernet/airoha/airoha_regs.h
 +++ b/drivers/net/ethernet/airoha/airoha_regs.h
 @@ -1038,6 +1038,13 @@

@@ -31,7 +31,7 @@ Signed-off-by: Quinn O'Shea <qoshea@gmail.com>
  				 struct netlink_ext_ack *extack);
 --- a/net/dsa/port.c
 +++ b/net/dsa/port.c
-@@ -876,6 +876,21 @@ bool dsa_port_skip_vlan_configuration(st
+@@ -880,6 +880,21 @@ bool dsa_port_skip_vlan_configuration(st
  	return !ds->configure_vlan_while_not_filtering && !br_vlan_enabled(br);
  }
  
