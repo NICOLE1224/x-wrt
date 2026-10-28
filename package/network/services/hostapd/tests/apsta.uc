@@ -58,7 +58,7 @@ function load_script(name, extra) {
 	return loadstring(source, { raw_mode: true, strict_declarations: true })();
 }
 let hap = load_script('hostapd', 'iface_gen_config, iface_add, iface_freq_info, radio_reload_class');
-let sta = load_script('wpa_supplicant', 'iface_stop, iface_hostapd_notify, iface_hostapd_disabled');
+let sta = load_script('wpa_supplicant', 'iface_stop, iface_hostapd_notify, iface_hostapd_disabled, mld_set_iface_config');
 
 function tick() {
 	let next = timers;
@@ -255,5 +255,48 @@ check(stops == 1, 'mesh/adhoc legacy AP stop policy is preserved');
 hostapd.interfaces = {}; hostapd.data.config = {};
 wpas.data.iface_sta.sta0 = true;
 check(sta.prepare('sta0', { freq: 5500, sec_chan_offset: 1 }), 'standalone STA can connect');
+
+// Operating classes take precedence over stale width fields after reload.
+for (let op_class, width in { '131': 0, '132': 0, '133': 1, '134': 2, '137': 9 }) {
+	setup(5955, [ `op_class=${op_class}`, 'eht_oper_chwidth=9' ]);
+	let candidate = hap.test.iface_freq_info(iface, hostapd.data.config.phy0,
+		{ frequency: 6275 });
+	check(candidate?.oper_chwidth == width, `operating class ${op_class} sets the width`);
+	check(candidate?.sec_channel == (op_class == '131' ? 0 : 1),
+		`operating class ${op_class} sets the secondary channel`);
+}
+setup(5180, [ 'op_class=130', 'vht_oper_chwidth=3' ]);
+check(hap.test.iface_freq_info(iface, hostapd.data.config.phy0,
+	{ frequency: 5500 }) == null, 'generic CSA refuses unsupported 80+80');
+event({ frequency: 5500, prepare: true });
+check(inflight?.oper_chwidth == 1, 'AP/STA follows the primary 80 MHz segment of 80+80');
+
+let colored = { ...base, data: [ ...base.data, 'he_bss_color=1' ] };
+let changed_color = { ...base, data: [ ...base.data, 'he_bss_color=2' ] };
+check(hap.test.radio_reload_class(colored, changed_color) == 'spatial_reuse',
+	'upstream live BSS color updates remain available');
+check(hap.test.radio_reload_class(colored, { ...colored, channel_follow: true,
+	data: [ ...colored.data, 'noscan=1' ] }) == 'same',
+	'STA-only changes with BSS color do not trigger a color update');
+check(hap.test.radio_reload_class(colored, { ...changed_color, channel_follow: true,
+	data: [ ...changed_color.data, 'noscan=1' ] }) == 'spatial_reuse',
+	'color and STA-presence changes can be applied together');
+
+// Upstream moved MLD config handling and distinguishes held radios from removal.
+let mld = { name: 'sta0', phy: 'phy0', phy_config: [], radio_mask: 3,
+	radio_mask_present: 0, radio_mask_kept: 0 };
+let radio_config = { freq_list: [ 5180, 5500 ] };
+wpas.interfaces = {};
+sta.test.mld_set_iface_config('sta0', mld, { radio: 0, stopped: false }, radio_config);
+check(mld.radio_mask_present == 1 && length(mld.freq_list) == 2,
+	'available MLD radio contributes its configured frequencies');
+calls = []; timers = [];
+sta.test.mld_set_iface_config('sta0', mld, { radio: 0, stopped: true }, radio_config);
+check(mld.radio_mask_present == 0 && !length(mld.freq_list) && !length(timers),
+	'held MLD radio keeps its config without restoring the AP channel');
+sta.test.mld_set_iface_config('sta0', mld, { radio: 0, stopped: false }, null);
+tick();
+check(calls[0]?.args.disabled && calls[0]?.args.radio == 0,
+	'removed MLD radio config requests AP channel restoration');
 
 printf('AP/STA: %d checks passed\n', checks);

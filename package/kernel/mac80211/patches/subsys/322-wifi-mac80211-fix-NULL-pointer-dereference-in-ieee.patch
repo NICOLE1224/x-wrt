@@ -14,7 +14,7 @@ Signed-off-by: OpenWrt Fix <fix@openwrt.org>
 ---
 --- a/net/mac80211/tx.c
 +++ b/net/mac80211/tx.c
-@@ -4252,7 +4252,7 @@ bool ieee80211_txq_may_transmit(struct i
+@@ -4388,6 +4388,6 @@ bool ieee80211_txq_may_transmit(struct i
  	return false;
  out:
 -	if (!list_empty(&txqi->schedule_order))

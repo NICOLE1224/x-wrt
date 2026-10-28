@@ -15,31 +15,12 @@ ports whose access PVID policy cannot be reproduced by this PPE path.
 Initialize the forwarding-path context before resolving WDMA paths for
 the context-based dev_fill_forward_path() interface.
 
+Track TX and RX WED ownership per hardware slot. Query the wireless flow
+priority before binding and implement WCID flow flush/idle callbacks under
+the slot lock, preserving the upstream SCS/MSCS lifecycle.
+
 Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
- drivers/net/ethernet/mediatek/Makefile           |   2 +-
- drivers/net/ethernet/mediatek/mtk_eth_soc.c      | 168 +++-
- drivers/net/ethernet/mediatek/mtk_eth_soc.h      |  38 +-
- drivers/net/ethernet/mediatek/mtk_ppe.h          |  47 +-
- drivers/net/ethernet/mediatek/mtk_ppe1.c         | 906 ++++++++++++++++++++
- .../net/ethernet/mediatek/mtk_ppe_debugfs.c      |   9 +-
- .../net/ethernet/mediatek/mtk_ppe_offload1.c     | 711 +++++++++++++++++
- drivers/net/ethernet/mediatek/mtk_ppe_regs.h     |  13 +
- drivers/net/ethernet/mediatek/mtk_wed.c          |  56 +-
- drivers/net/ethernet/mediatek/mtk_wed.h          |   5 +
- drivers/net/ppp/ppp_generic.c                    |  32 +
- drivers/net/ppp/pppoe.c                          |  23 +
- include/linux/netdevice.h                        |  24 +
- include/linux/ppp_channel.h                      |   1 +
- include/net/netfilter/nf_flow_table.h            |  57 ++
- net/8021q/vlan_dev.c                             |  19 +
- net/bridge/br_device.c                           |  22 +
- net/core/dev.c                                   |   6 +
- net/dsa/user.c                                   |  46 ++
- 19 files changed, 2134 insertions(+), 51 deletions(-)
- create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe1.c
- create mode 100644 drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-
 --- a/drivers/net/ethernet/mediatek/Makefile
 +++ b/drivers/net/ethernet/mediatek/Makefile
 @@ -4,7 +4,7 @@
@@ -71,11 +52,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				data |= TX_DMA_INS_VLAN | 1;
 +			}
 +		}
-+	}
+ 	}
 +	if (info->natflow) {
 +		data &= ~(TX_DMA_FPORT_MASK << TX_DMA_FPORT_SHIFT);
 +		data |= (0x4 & TX_DMA_FPORT_MASK) << TX_DMA_FPORT_SHIFT;
- 	}
++	}
 +
  	WRITE_ONCE(desc->txd4, data);
  }
@@ -138,17 +119,15 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			rxdcsum = &trxd.rxd4;
  		}
  
-@@ -2605,11 +2616,41 @@ static int mtk_poll_rx(struct napi_struc
+@@ -2605,11 +2616,33 @@ static int mtk_poll_rx(struct napi_struc
  				skb_dst_set_noref(skb, &eth->dsa_meta[port]->dst);
  		}
  
-+#if 0
- 		if (reason == MTK_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
- 			mtk_ppe_check_skb(eth->ppe[ppe_idx], skb, hash);
- 
- 		skb_record_rx_queue(skb, 0);
- 		napi_gro_receive(napi, skb);
-+#else
+-		if (reason == MTK_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
+-			mtk_ppe_check_skb(eth->ppe[ppe_idx], skb, hash, -1, 0);
+-
+-		skb_record_rx_queue(skb, 0);
+-		napi_gro_receive(napi, skb);
 +		if (mtk_is_netsys_v3_or_greater(eth)) {
 +			switch (mtk_offload_check_rx_v2(eth, ppe_idx, skb, trxd.rxd5)) {
 +			case 0:
@@ -176,11 +155,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +				dev_kfree_skb(skb);
 +			}
 +		}
-+#endif
  
  skip_rx:
  		ring->data[idx] = new_data;
-@@ -3829,21 +3870,35 @@ static int mtk_device_event(struct notif
+@@ -3829,21 +3862,35 @@ static int mtk_device_event(struct notif
  	struct dsa_port *dp;
  	unsigned int queue;
  
@@ -223,7 +201,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	if (__ethtool_get_link_ksettings(dev, &s))
  		return NOTIFY_DONE;
-@@ -3851,16 +3906,7 @@ found:
+@@ -3851,16 +3898,7 @@ found:
  	if (s.base.speed == 0 || s.base.speed == ((__u32)-1))
  		return NOTIFY_DONE;
  
@@ -241,7 +219,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  	mtk_set_queue_speed(eth, queue, s.base.speed);
  
-@@ -3964,6 +4010,7 @@ static int mtk_open(struct net_device *d
+@@ -3964,6 +4002,7 @@ static int mtk_open(struct net_device *d
  			md_dst->u.port_info.port_id = i;
  			eth->dsa_meta[i] = md_dst;
  		}
@@ -249,7 +227,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	} else {
  		/* Hardware DSA untagging and VLAN RX offloading need to be
  		 * disabled if at least one MAC does not use DSA.
-@@ -3974,6 +4021,7 @@ static int mtk_open(struct net_device *d
+@@ -3974,6 +4013,7 @@ static int mtk_open(struct net_device *d
  		mtk_w32(eth, val, MTK_CDMP_IG_CTRL);
  
  		mtk_w32(eth, 0, MTK_CDMP_EG_CTRL);
@@ -257,7 +235,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	}
  
  	return 0;
-@@ -4545,10 +4593,12 @@ static int mtk_hw_init(struct mtk_eth *e
+@@ -4545,10 +4585,12 @@ static int mtk_hw_init(struct mtk_eth *e
  	val = mtk_r32(eth, MTK_CDMQ_IG_CTRL);
  	mtk_w32(eth, val | MTK_CDMQ_STAG_EN, MTK_CDMQ_IG_CTRL);
  	if (mtk_is_netsys_v1(eth)) {
@@ -272,7 +250,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	}
  
  	/* set interrupt delays based on current Net DIM sample */
-@@ -5148,6 +5198,56 @@ static netdev_features_t mtk_features_ch
+@@ -5148,6 +5190,56 @@ static netdev_features_t mtk_features_ch
  }
  #endif
  
@@ -329,7 +307,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct ethtool_ops mtk_ethtool_ops = {
  	.get_link_ksettings	= mtk_get_link_ksettings,
  	.set_link_ksettings	= mtk_set_link_ksettings,
-@@ -5183,7 +5283,8 @@ static const struct net_device_ops mtk_n
+@@ -5183,7 +5275,8 @@ static const struct net_device_ops mtk_n
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mtk_poll_controller,
  #endif
@@ -339,7 +317,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	.ndo_bpf		= mtk_xdp,
  	.ndo_xdp_xmit		= mtk_xdp_xmit,
  	.ndo_select_queue	= mtk_select_queue,
-@@ -5857,7 +5958,8 @@ static int mtk_probe(struct platform_dev
+@@ -5857,7 +5950,8 @@ static int mtk_probe(struct platform_dev
  err_unreg_netdev:
  	mtk_unreg_dev(eth);
  err_deinit_ppe:
@@ -349,7 +327,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	mtk_mdio_cleanup(eth);
  err_free_dev:
  	mtk_free_dev(eth);
-@@ -5877,6 +5979,8 @@ static void mtk_remove(struct platform_d
+@@ -5877,6 +5971,8 @@ static void mtk_remove(struct platform_d
  	struct mtk_mac *mac;
  	int i;
  
@@ -453,7 +431,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int mtk_eth_offload_init(struct mtk_eth *eth, u8 id);
  int mtk_eth_setup_tc(struct net_device *dev, enum tc_setup_type type,
  		     void *type_data);
-@@ -1582,5 +1615,4 @@ int mtk_flow_offload_cmd(struct mtk_eth
+@@ -1586,5 +1619,4 @@ int mtk_flow_offload_cmd(struct mtk_eth
  void mtk_flow_offload_cleanup(struct mtk_eth *eth, struct list_head *list);
  void mtk_eth_set_dma_device(struct mtk_eth *eth, struct device *dma_dev);
  
@@ -461,13 +439,20 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #endif /* MTK_ETH_H */
 --- a/drivers/net/ethernet/mediatek/mtk_ppe.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe.h
-@@ -7,8 +7,13 @@
+@@ -7,6 +7,7 @@
  #include <linux/kernel.h>
  #include <linux/bitfield.h>
  #include <linux/rhashtable.h>
 +#include <linux/spinlock.h>
  
-+#if (defined(CONFIG_PINCTRL_MT7988) || defined(CONFIG_PINCTRL_MT7987) || defined(CONFIG_PINCTRL_MT7986) || defined(CONFIG_PINCTRL_MT7981))
+ struct cfg80211_flow_info;
+ 
+@@ -19,7 +20,12 @@ struct mtk_flow_match {
+ 	void *arg;
+ };
+ 
++#if defined(CONFIG_PINCTRL_MT7988) || defined(CONFIG_PINCTRL_MT7987) || \
++    defined(CONFIG_PINCTRL_MT7986) || defined(CONFIG_PINCTRL_MT7981)
  #define MTK_PPE_ENTRIES_SHIFT		4
 +#else
 +#define MTK_PPE_ENTRIES_SHIFT		3
@@ -475,7 +460,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define MTK_PPE_ENTRIES			(1024 << MTK_PPE_ENTRIES_SHIFT)
  #define MTK_PPE_HASH_MASK		(MTK_PPE_ENTRIES - 1)
  #define MTK_PPE_WAIT_TIMEOUT_US		1000000
-@@ -34,6 +39,7 @@
+@@ -45,6 +51,7 @@ struct mtk_flow_match {
  
  /* CONFIG_MEDIATEK_NETSYS_V2 */
  #define MTK_FOE_IB1_BIND_TIMESTAMP_V2	GENMASK(7, 0)
@@ -483,7 +468,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #define MTK_FOE_IB1_BIND_VLAN_LAYER_V2	GENMASK(16, 14)
  #define MTK_FOE_IB1_BIND_PPPOE_V2	BIT(17)
  #define MTK_FOE_IB1_BIND_VLAN_TAG_V2	BIT(18)
-@@ -132,14 +138,18 @@ struct mtk_foe_mac_info {
+@@ -143,14 +150,18 @@ struct mtk_foe_mac_info {
  
  /* software-only entry type */
  struct mtk_foe_bridge {
@@ -491,11 +476,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 -	u8 src_mac[ETH_ALEN];
 -	u16 vlan;
 +	u32 dest_mac_hi;
-+
-+	u16 src_mac_lo;
-+	u16 dest_mac_lo;
  
 -	struct {} key_end;
++	u16 src_mac_lo;
++	u16 dest_mac_lo;
++
 +	u32 src_mac_hi;
  
  	u32 ib2;
@@ -506,7 +491,28 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	struct mtk_foe_mac_info l2;
  };
  
-@@ -344,10 +354,25 @@ struct mtk_ppe {
+@@ -340,6 +351,12 @@ struct mtk_foe_accounting {
+ 	u64	packets;
+ };
+ 
++/* Software ownership for each natflow hardware slot, protected by mib_lock. */
++struct mtk_ppe_wed_flow {
++	s8 tx_index, rx_index;
++	u16 tx_wcid, rx_wcid;
++};
++
+ struct mtk_ppe {
+ 	struct mtk_eth *eth;
+ 	struct device *dev;
+@@ -348,6 +365,7 @@ struct mtk_ppe {
+ 	char dirname[5];
+ 	bool accounting;
+ 
++	struct mtk_ppe_wed_flow *wed_flows;
+ 	void *foe_table;
+ 	dma_addr_t foe_phys;
+ 
+@@ -358,10 +376,25 @@ struct mtk_ppe {
  	struct hlist_head *foe_flow;
  
  	struct rhashtable l2_flows;
@@ -533,12 +539,33 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct mtk_ppe *mtk_ppe_init(struct mtk_eth *eth, void __iomem *base, int index);
  
  void mtk_ppe_deinit(struct mtk_eth *eth);
-@@ -378,10 +403,15 @@ mtk_ppe_check_skb(struct mtk_ppe *ppe, s
- 	ppe->foe_check_time[hash] = now;
- 	__mtk_ppe_check_skb(ppe, skb, hash);
- }
-+#endif
-+
+@@ -371,33 +404,13 @@ int mtk_ppe_stop(struct mtk_ppe *ppe);
+ int mtk_ppe_prepare_reset(struct mtk_ppe *ppe);
+ struct mtk_foe_accounting *mtk_ppe_mib_entry_read(struct mtk_ppe *ppe, u16 index);
+ 
+-void __mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash,
+-			 int rx_wed_index, u16 rx_wcid);
+-
+-static inline void
+-mtk_ppe_check_skb(struct mtk_ppe *ppe, struct sk_buff *skb, u16 hash,
+-		  int rx_wed_index, u16 rx_wcid)
+-{
+-	u16 now, diff;
+-
+-	if (!ppe)
+-		return;
+-
+-	if (hash > MTK_PPE_HASH_MASK)
+-		return;
+-
+-	now = (u16)jiffies;
+-	diff = now - ppe->foe_check_time[hash];
+-	if (diff < HZ / 10)
+-		return;
+-
+-	ppe->foe_check_time[hash] = now;
+-	__mtk_ppe_check_skb(ppe, skb, hash, rx_wed_index, rx_wcid);
+-}
 +struct mtk_ppe_account_group *mtk_ppe_account_group_get(u32 idx);
 +u32 *mtk_foe_entry_ib2(struct mtk_eth *eth, struct mtk_foe_entry *entry);
  
@@ -549,25 +576,29 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int mtk_foe_entry_set_pse_port(struct mtk_eth *eth,
  			       struct mtk_foe_entry *entry, u8 port);
  int mtk_foe_entry_set_ipv4_tuple(struct mtk_eth *eth,
-@@ -403,10 +433,13 @@ int mtk_foe_entry_set_wdma(struct mtk_et
+@@ -419,12 +432,13 @@ int mtk_foe_entry_set_wdma(struct mtk_et
  			   bool amsdu_en);
  int mtk_foe_entry_set_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry,
  			    unsigned int queue);
+-int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+-void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
+-void mtk_foe_entry_unbind(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+-			  bool rx, const struct mtk_flow_match *match);
+-int mtk_foe_entry_flow_idle(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
+-			    bool rx, const struct mtk_flow_match *match);
 +int mtk_foe_entry_clear_queue(struct mtk_eth *eth, struct mtk_foe_entry *entry);
-+#if 0
- int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
- void mtk_foe_entry_clear(struct mtk_ppe *ppe, struct mtk_flow_entry *entry);
-+#endif
 +void mtk_foe_entry_clear(struct mtk_ppe *ppe, u16 hash);
-+int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry, u16 timestamp, u32 orig_hash);
++int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
++                         u16 timestamp, u32 orig_hash,
++                         const struct mtk_ppe_wed_flow *wed);
++int mtk_ppe_wed_flow_update(struct mtk_ppe *ppe, int wed_index, u16 wcid,
++                            const struct mtk_flow_match *match, bool idle);
  int mtk_ppe_debugfs_init(struct mtk_ppe *ppe, int index);
  void mtk_foe_entry_get_stats(struct mtk_ppe *ppe, struct mtk_flow_entry *entry,
  			     int *idle);
--
--#endif
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe1.c
-@@ -0,0 +1,906 @@
+@@ -0,0 +1,1077 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* Copyright (C) 2020 Felix Fietkau <nbd@nbd.name> */
 +
@@ -579,6 +610,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +#include <linux/if_ether.h>
 +#include <linux/if_vlan.h>
 +#include <net/dsa.h>
++#include <net/cfg80211.h>
++#include <linux/unaligned.h>
++#include "mtk_wed.h"
 +#include "mtk_eth_soc.h"
 +#include "mtk_ppe.h"
 +#include "mtk_ppe_regs.h"
@@ -1069,8 +1103,97 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +static int __mtk_ppe_read_mib(struct mtk_ppe *ppe, unsigned int hash,
 +			      struct mtk_foe_accounting *diff);
 +
++static void
++mtk_foe_entry_get_flow(struct mtk_eth *eth, struct mtk_foe_entry *entry,
++		       bool rx, struct cfg80211_flow_info *info)
++{
++	int type = mtk_get_ib1_pkt_type(eth, entry->ib1);
++	struct mtk_foe_mac_info *l2;
++	struct mtk_ipv4_tuple *t;
++	int i;
++
++	memset(info, 0, sizeof(*info));
++	info->key.proto = entry->ib1 & MTK_FOE_IB1_UDP ? IPPROTO_UDP
++						       : IPPROTO_TCP;
++
++	l2 = mtk_foe_entry_l2(eth, entry);
++	put_unaligned_be32(l2->dest_mac_hi, info->key.da);
++	put_unaligned_be16(l2->dest_mac_lo, info->key.da + 4);
++	put_unaligned_be32(l2->src_mac_hi, info->key.sa);
++	put_unaligned_be16(l2->src_mac_lo, info->key.sa + 4);
++	info->key.eth_type = htons(l2->etype);
++	info->present = BIT(CFG80211_FLOW_F_ETH_DA) |
++			BIT(CFG80211_FLOW_F_ETH_SA) |
++			BIT(CFG80211_FLOW_F_ETH_TYPE);
++
++	switch (type) {
++	case MTK_PPE_PKT_TYPE_IPV4_HNAPT:
++	case MTK_PPE_PKT_TYPE_IPV4_ROUTE:
++		if (type == MTK_PPE_PKT_TYPE_IPV4_HNAPT && !rx)
++			t = &entry->ipv4.new;
++		else
++			t = &entry->ipv4.orig;
++		info->key.ip_version = 4;
++		info->key.src.s6_addr32[0] = cpu_to_be32(t->src_ip);
++		info->key.dst.s6_addr32[0] = cpu_to_be32(t->dest_ip);
++
++		if (type == MTK_PPE_PKT_TYPE_IPV4_ROUTE) {
++			info->key.proto = t->protocol;
++			break;
++		}
++
++		info->key.src_port = cpu_to_be16(t->src_port);
++		info->key.dst_port = cpu_to_be16(t->dest_port);
++		info->present |= BIT(CFG80211_FLOW_F_SRC_PORT) |
++				 BIT(CFG80211_FLOW_F_DST_PORT);
++		break;
++	case MTK_PPE_PKT_TYPE_IPV6_ROUTE_3T:
++	case MTK_PPE_PKT_TYPE_IPV6_ROUTE_5T:
++		info->key.ip_version = 6;
++		for (i = 0; i < 4; i++) {
++			info->key.src.s6_addr32[i] =
++				cpu_to_be32(entry->ipv6.src_ip[i]);
++			info->key.dst.s6_addr32[i] =
++				cpu_to_be32(entry->ipv6.dest_ip[i]);
++		}
++
++		if (type == MTK_PPE_PKT_TYPE_IPV6_ROUTE_3T) {
++			info->key.proto = entry->ipv6.protocol;
++			break;
++		}
++
++		info->key.src_port = cpu_to_be16(entry->ipv6.src_port);
++		info->key.dst_port = cpu_to_be16(entry->ipv6.dest_port);
++		info->present |= BIT(CFG80211_FLOW_F_SRC_PORT) |
++				 BIT(CFG80211_FLOW_F_DST_PORT);
++		break;
++	default:
++		info->key.proto = 0;
++		return;
++	}
++
++	info->present |= BIT(CFG80211_FLOW_F_IP_VERSION) |
++			 BIT(CFG80211_FLOW_F_IP_SRC) |
++			 BIT(CFG80211_FLOW_F_IP_DST) |
++			 BIT(CFG80211_FLOW_F_PROTO);
++}
++
++static void
++mtk_foe_entry_set_tid(struct mtk_eth *eth, struct mtk_foe_entry *entry, u8 tid)
++{
++	struct mtk_foe_mac_info *l2;
++
++	if (!mtk_is_netsys_v3_or_greater(eth))
++		return;
++
++	l2 = mtk_foe_entry_l2(eth, entry);
++	l2->amsdu &= ~MTK_FOE_WINFO_AMSDU_TID;
++	l2->amsdu |= FIELD_PREP(MTK_FOE_WINFO_AMSDU_TID, tid);
++}
++
 +int mtk_foe_entry_commit(struct mtk_ppe *ppe, struct mtk_foe_entry *entry,
-+                         u16 timestamp, u32 orig_hash)
++                         u16 timestamp, u32 orig_hash,
++                         const struct mtk_ppe_wed_flow *wed)
 +{
 +	struct mtk_foe_accounting diff = {};
 +	struct mtk_foe_entry *hwe;
@@ -1097,12 +1220,25 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	if (!mtk_foe_entry_usable(hwe))
 +		goto out;
 +
++	if (wed->tx_index >= 0) {
++		struct cfg80211_flow_info info;
++		u8 tid = 0;
++
++		mtk_foe_entry_get_flow(ppe->eth, entry, false, &info);
++		/* natflow has no binding skb/DSCP. Undecidable rules stay in software. */
++		ret = mtk_wed_flow_prio(wed->tx_index, wed->tx_wcid, &info, -1, &tid);
++		if (ret)
++			goto out;
++		mtk_foe_entry_set_tid(ppe->eth, entry, tid);
++	}
++
 +	/* Discard the previous flow's counters before publishing a new BIND. */
 +	if (ppe->accounting) {
 +		ret = __mtk_ppe_read_mib(ppe, hash, &diff);
 +		if (ret)
 +			goto out;
 +	}
++	ppe->wed_flows[hash] = *wed;
 +	memcpy(&hwe->data, &entry->data, ppe->eth->soc->foe_entry_size - sizeof(hwe->ib1));
 +	wmb();
 +	hwe->ib1 = entry->ib1;
@@ -1254,6 +1390,10 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		return NULL;
 +
 +	ppe->foe_table = foe;
++	ppe->wed_flows = devm_kcalloc(dev, MTK_PPE_ENTRIES,
++				      sizeof(*ppe->wed_flows), GFP_KERNEL);
++	if (!ppe->wed_flows)
++		return NULL;
 +
 +	if (accounting) {
 +		mib = dmam_alloc_coherent(ppe->dev, MTK_PPE_ENTRIES * sizeof(*mib),
@@ -1474,6 +1614,68 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	ppe_w32(ppe, MTK_PPE_FLOW_CFG, 0);
 +	return 0;
 +}
++
++/* Match and update ownership under the same lock that publishes BIND entries. */
++int mtk_ppe_wed_flow_update(struct mtk_ppe *ppe, int wed_index, u16 wcid,
++                            const struct mtk_flow_match *match, bool idle)
++{
++	struct mtk_eth *eth = ppe->eth;
++	u32 mask = mtk_get_ib1_ts_mask(eth);
++	u32 now = mtk_r32(eth, 0x0010) & mask;
++	bool changed = false;
++	int best = -ENOENT;
++	int hash;
++
++	spin_lock_bh(&ppe->mib_lock);
++	for (hash = 0; hash < MTK_PPE_ENTRIES; hash++) {
++		struct mtk_ppe_wed_flow *wed = &ppe->wed_flows[hash];
++		struct mtk_foe_entry *hwe = mtk_foe_get_entry(ppe, hash);
++		u32 ib1 = READ_ONCE(hwe->ib1);
++		bool hit = false;
++		int rx;
++
++		if (FIELD_GET(MTK_FOE_IB1_STATE, ib1) != MTK_FOE_STATE_BIND)
++			continue;
++
++		for (rx = 0; rx < 2 && !hit; rx++) {
++			struct cfg80211_flow_info info;
++			int index = rx ? wed->rx_index : wed->tx_index;
++			u16 peer = rx ? wed->rx_wcid : wed->tx_wcid;
++
++			if (index != wed_index || peer != wcid)
++				continue;
++			if (!match->fn) {
++				hit = true;
++				break;
++			}
++			dma_rmb();
++			mtk_foe_entry_get_flow(eth, hwe, rx, &info);
++			/* Routed uplink entries carry the next hop's MAC addresses. */
++			if (rx)
++				info.present &= ~(BIT(CFG80211_FLOW_F_ETH_SA) |
++						  BIT(CFG80211_FLOW_F_ETH_DA));
++			hit = match->fn(&info, rx, match->arg);
++		}
++		if (!hit)
++			continue;
++		if (idle) {
++			int age = (now - (READ_ONCE(hwe->ib1) & mask)) & mask;
++
++			if (best < 0 || age < best)
++				best = age;
++		} else {
++			WRITE_ONCE(hwe->ib1, ib1 & ~MTK_FOE_IB1_STATE);
++			changed = true;
++		}
++	}
++	if (changed) {
++		dma_wmb();
++		mtk_ppe_cache_clear(ppe);
++	}
++	spin_unlock_bh(&ppe->mib_lock);
++
++	return best;
++}
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 @@ -83,7 +83,6 @@ mtk_ppe_debugfs_foe_show(struct seq_file
@@ -1509,7 +1711,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	return 0;
 --- /dev/null
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_offload1.c
-@@ -0,0 +1,711 @@
+@@ -0,0 +1,751 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + *  Copyright (C) 2020 Felix Fietkau <nbd@nbd.name>
@@ -1717,7 +1919,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +                       flow_offload_tuple_t *s_tuple,
 +                       flow_offload_tuple_t *d_tuple,
 +                       flow_offload_hw_path_t *src,
-+                       flow_offload_hw_path_t *dest, int *ppe_idx)
++                       flow_offload_hw_path_t *dest, int *ppe_idx,
++                       struct mtk_ppe_wed_flow *wed)
 +{
 +	enum dsa_tag_protocol dsa_proto;
 +	int pse_port = PSE_GDM1_PORT;
@@ -1759,6 +1962,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		struct mtk_wdma_info info = {};
 +
 +		if (mtk_flow_get_wdma_info(src->dev, src->eth_dest, &info) == 0) {
++			wed->rx_index = info.wdma_idx;
++			wed->rx_wcid = info.wcid;
 +			*ppe_idx = 0;
 +			if (mtk_is_netsys_v2_or_greater(eth)) {
 +				switch (info.wdma_idx) {
@@ -1781,6 +1986,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		struct mtk_wdma_info info = {};
 +
 +		if (mtk_flow_get_wdma_info(dest->dev, dest->eth_dest, &info) == 0) {
++			wed->tx_index = info.wdma_idx;
++			wed->tx_wcid = info.wcid;
 +			mtk_foe_entry_set_wdma(eth, entry, info.wdma_idx, info.queue, info.bss, info.wcid, info.amsdu);
 +			if (mtk_is_netsys_v2_or_greater(eth)) {
 +				switch (info.wdma_idx) {
@@ -1845,7 +2052,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +                       flow_offload_tuple_t *s_tuple,
 +                       flow_offload_tuple_t *d_tuple,
 +                       flow_offload_hw_path_t *src,
-+                       flow_offload_hw_path_t *dest, int *ppe_idx)
++                       flow_offload_hw_path_t *dest, int *ppe_idx,
++                       struct mtk_ppe_wed_flow *wed)
 +{
 +	enum dsa_tag_protocol dsa_proto;
 +	int pse_port = PSE_GDM1_PORT;
@@ -1884,6 +2092,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		struct mtk_wdma_info info = {};
 +
 +		if (mtk_flow_get_wdma_info(src->dev, src->eth_dest, &info) == 0) {
++			wed->rx_index = info.wdma_idx;
++			wed->rx_wcid = info.wcid;
 +			*ppe_idx = 0;
 +			if (mtk_is_netsys_v2_or_greater(eth)) {
 +				switch (info.wdma_idx) {
@@ -1906,6 +2116,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		struct mtk_wdma_info info = {};
 +
 +		if (mtk_flow_get_wdma_info(dest->dev, dest->eth_dest, &info) == 0) {
++			wed->tx_index = info.wdma_idx;
++			wed->tx_wcid = info.wcid;
 +			mtk_foe_entry_set_wdma(eth, entry, info.wdma_idx, info.queue, info.bss, info.wcid, info.amsdu);
 +			if (mtk_is_netsys_v2_or_greater(eth)) {
 +				switch (info.wdma_idx) {
@@ -1973,6 +2185,8 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +	flow_offload_tuple_t *otuple = &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].tuple;
 +	flow_offload_tuple_t *rtuple = &flow->tuplehash[FLOW_OFFLOAD_DIR_REPLY].tuple;
 +	struct mtk_foe_entry orig, reply;
++	struct mtk_ppe_wed_flow orig_wed = { .tx_index = -1, .rx_index = -1 };
++	struct mtk_ppe_wed_flow reply_wed = { .tx_index = -1, .rx_index = -1 };
 +	int ohash, rhash;
 +	int orig_ppe_idx = 0;
 +	int reply_ppe_idx = 0;
@@ -2006,13 +2220,13 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +
 +	switch (otuple->l3proto) {
 +	case AF_INET:
-+		if (mtk_offload_prepare_v4(eth, &orig, otuple, rtuple, src, dest, &orig_ppe_idx) ||
-+		        mtk_offload_prepare_v4(eth, &reply, rtuple, otuple, dest, src, &reply_ppe_idx))
++		if (mtk_offload_prepare_v4(eth, &orig, otuple, rtuple, src, dest, &orig_ppe_idx, &orig_wed) ||
++		        mtk_offload_prepare_v4(eth, &reply, rtuple, otuple, dest, src, &reply_ppe_idx, &reply_wed))
 +			return -EINVAL;
 +		break;
 +	case AF_INET6:
-+		if (mtk_offload_prepare_v6(eth, &orig, otuple, rtuple, src, dest, &orig_ppe_idx) ||
-+		        mtk_offload_prepare_v6(eth, &reply, rtuple, otuple, dest, src, &reply_ppe_idx))
++		if (mtk_offload_prepare_v6(eth, &orig, otuple, rtuple, src, dest, &orig_ppe_idx, &orig_wed) ||
++		        mtk_offload_prepare_v6(eth, &reply, rtuple, otuple, dest, src, &reply_ppe_idx, &reply_wed))
 +			return -EINVAL;
 +		break;
 +	default:
@@ -2021,11 +2235,11 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +
 +	timestamp = mtk_r32(eth, 0x0010) & mtk_get_ib1_ts_mask(eth);
 +
-+	ohash = mtk_foe_entry_commit(eth->ppe[orig_ppe_idx], &orig, timestamp, ((flow->timeout >> 16) & 0xffff));
++	ohash = mtk_foe_entry_commit(eth->ppe[orig_ppe_idx], &orig, timestamp, ((flow->timeout >> 16) & 0xffff), &orig_wed);
 +	if (ohash < 0)
 +		return -EINVAL;
 +
-+	rhash = mtk_foe_entry_commit(eth->ppe[reply_ppe_idx], &reply, timestamp, ((flow->timeout >> 0) & 0xffff));
++	rhash = mtk_foe_entry_commit(eth->ppe[reply_ppe_idx], &reply, timestamp, ((flow->timeout >> 0) & 0xffff), &reply_wed);
 +	if (rhash < 0) {
 +		mtk_foe_entry_clear(eth->ppe[orig_ppe_idx], ohash);
 +		return -EINVAL;
@@ -2221,6 +2435,34 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		timer_delete_sync(&ag_timer);
 +	}
 +}
++
++void mtk_flow_offload_unbind_wcid(struct mtk_eth *eth, int wed_index, u16 wcid,
++                                 struct mtk_flow_match *match)
++{
++	int i;
++
++	for (i = 0; i < eth->soc->ppe_num; i++)
++		if (eth->ppe[i])
++			mtk_ppe_wed_flow_update(eth->ppe[i], wed_index, wcid, match, false);
++}
++
++int mtk_flow_offload_idle_wcid(struct mtk_eth *eth, int wed_index, u16 wcid,
++                              const struct mtk_flow_match *match)
++{
++	int i, best = -ENOENT;
++
++	for (i = 0; i < eth->soc->ppe_num; i++) {
++		int idle;
++
++		if (!eth->ppe[i])
++			continue;
++		idle = mtk_ppe_wed_flow_update(eth->ppe[i], wed_index, wcid, match, true);
++		if (idle >= 0 && (best < 0 || idle < best))
++			best = idle;
++	}
++
++	return best;
++}
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
 +++ b/drivers/net/ethernet/mediatek/mtk_ppe_regs.h
 @@ -38,6 +38,11 @@
@@ -2252,30 +2494,48 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  #endif
 --- a/drivers/net/ethernet/mediatek/mtk_wed.c
 +++ b/drivers/net/ethernet/mediatek/mtk_wed.c
-@@ -1965,13 +1965,21 @@ mtk_wed_ppe_check(struct mtk_wed_device
- 	if (!skb)
- 		return;
+@@ -2005,24 +2005,34 @@ mtk_wed_wdma_tx_ring_setup(struct mtk_we
+ 	return 0;
+ }
  
+-static void
++static bool
+ mtk_wed_ppe_check(struct mtk_wed_device *dev, struct sk_buff *skb,
+-		  u32 reason, u32 hash, u16 wcid)
++                  u32 reason, u32 hash, u16 wcid)
+ {
+ 	struct mtk_eth *eth = dev->hw->eth;
+ 	struct ethhdr *eh;
+ 
+ 	if (!skb)
+-		return;
++		return false;
++
 +	switch (reason) {
 +	case MTK_PPE_CPU_REASON_KEEPALIVE_UC_OLD_HDR:
 +	case MTK_PPE_CPU_REASON_KEEPALIVE_MC_NEW_HDR:
 +	case MTK_PPE_CPU_REASON_KEEPALIVE_DUP_OLD_HDR:
 +		mtk_offload_keepalive(eth, dev->hw->index, hash);
-+		break;
++		return true;
++	case MTK_PPE_CPU_REASON_PACKET_SAMPLING:
++		return true;
 +	}
-+
+ 
  	if (reason != MTK_PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
- 		return;
+-		return;
++		return false;
  
  	skb_set_mac_header(skb, 0);
  	eh = eth_hdr(skb);
  	skb->protocol = eh->h_proto;
--	mtk_ppe_check_skb(eth->ppe[dev->hw->index], skb, hash);
-+	//mtk_ppe_check_skb(eth->ppe[dev->hw->index], skb, hash);
+-	mtk_ppe_check_skb(eth->ppe[dev->hw->index], skb, hash, dev->hw->index,
+-			  wcid);
++	/* natflow binds both directions and records WCIDs from forward paths. */
++	return false;
  }
  
  static void
-@@ -2657,6 +2665,33 @@ out:
+@@ -2750,6 +2760,33 @@ out:
  	return ret;
  }
  
@@ -2309,7 +2569,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  void mtk_wed_flow_remove(int index)
  {
  	struct mtk_wed_hw *hw = hw_list[index];
-@@ -2679,6 +2714,7 @@ out:
+@@ -2772,6 +2809,7 @@ out:
  	mutex_unlock(&hw_lock);
  }
  
@@ -2317,7 +2577,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static int
  mtk_wed_setup_tc_block_cb(enum tc_setup_type type, void *type_data, void *cb_priv)
  {
-@@ -2772,6 +2808,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
+@@ -2865,6 +2903,24 @@ mtk_wed_setup_tc(struct mtk_wed_device *
  	default:
  		return -EOPNOTSUPP;
  	}
@@ -2350,9 +2610,9 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  int mtk_wed_flow_add(int index);
 +int mtk_wed_flow_add_nolock(int index);
  void mtk_wed_flow_remove(int index);
- void mtk_wed_fe_reset(void);
- void mtk_wed_fe_reset_complete(void);
-@@ -202,6 +203,10 @@ static inline int mtk_wed_flow_add(int i
+ int mtk_wed_flow_prio(int index, u16 wcid, const struct cfg80211_flow_info *info,
+ 		      int dscp, u8 *prio);
+@@ -204,6 +205,10 @@ static inline int mtk_wed_flow_add(int i
  {
  	return -EINVAL;
  }
@@ -2512,7 +2772,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -191,6 +191,63 @@ struct flow_offload {
+@@ -192,6 +192,63 @@ struct flow_offload {
  	struct rcu_head				rcu_head;
  };
  
@@ -2689,7 +2949,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  
  #include "conduit.h"
  #include "dsa.h"
-@@ -2601,6 +2603,49 @@ static int dsa_user_hwtstamp_set(struct
+@@ -2603,6 +2605,49 @@ static int dsa_user_hwtstamp_set(struct
  	return ds->ops->port_hwtstamp_set(ds, dp->index, cfg, extack);
  }
  
@@ -2739,7 +2999,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  static const struct net_device_ops dsa_user_netdev_ops = {
  	.ndo_open		= dsa_user_open,
  	.ndo_stop		= dsa_user_close,
-@@ -2622,6 +2667,7 @@ static const struct net_device_ops dsa_u
+@@ -2624,6 +2669,7 @@ static const struct net_device_ops dsa_u
  	.ndo_vlan_rx_kill_vid	= dsa_user_vlan_rx_kill_vid,
  	.ndo_change_mtu		= dsa_user_change_mtu,
  	.ndo_fill_forward_path	= dsa_user_fill_forward_path,
@@ -2747,3 +3007,24 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	.ndo_hwtstamp_get	= dsa_user_hwtstamp_get,
  	.ndo_hwtstamp_set	= dsa_user_hwtstamp_set,
  };
+--- a/include/linux/soc/mediatek/mtk_wed.h
++++ b/include/linux/soc/mediatek/mtk_wed.h
+@@ -207,7 +207,7 @@ struct mtk_wed_ops {
+ 	int (*msg_update)(struct mtk_wed_device *dev, int cmd_id,
+ 			  void *data, int len);
+ 	void (*detach)(struct mtk_wed_device *dev);
+-	void (*ppe_check)(struct mtk_wed_device *dev, struct sk_buff *skb,
++	bool (*ppe_check)(struct mtk_wed_device *dev, struct sk_buff *skb,
+ 			  u32 reason, u32 hash, u16 wcid);
+ 
+ 	void (*stop)(struct mtk_wed_device *dev);
+@@ -335,8 +335,7 @@ static inline bool mtk_wed_device_active
+ #define mtk_wed_device_irq_get(_dev, _mask) 0
+ #define mtk_wed_device_irq_set_mask(_dev, _mask) do {} while (0)
+ #define mtk_wed_device_rx_ring_setup(_dev, _ring, _regs, _reset) -ENODEV
+-#define mtk_wed_device_ppe_check(_dev, _skb, _reason, _hash, _wcid) \
+-	do {} while (0)
++#define mtk_wed_device_ppe_check(_dev, _skb, _reason, _hash, _wcid) false
+ #define mtk_wed_device_update_msg(_dev, _id, _msg, _len) -ENODEV
+ #define mtk_wed_device_stop(_dev) do {} while (0)
+ #define mtk_wed_device_dma_reset(_dev) do {} while (0)
