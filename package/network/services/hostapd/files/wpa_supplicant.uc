@@ -21,6 +21,8 @@ wpas.data.iface_sta = {};
 wpas.data.iface_stopping = {};
 wpas.data.iface_ubus = {};
 wpas.data.dpp_hooks = {};
+wpas.data.eapol = {};
+wpas.data.wired = {};
 
 function iface_hostapd_disabled(ifname)
 {
@@ -1036,6 +1038,9 @@ let main_obj = {
 			if (wpas.add_iface(req.args) < 0)
 				return libubus.STATUS_INVALID_ARGUMENT;
 
+			if (req.args.driver == "wired")
+				wpas.data.wired[req.args.iface] = true;
+
 			return {
 				pid: wpas.getpid()
 			};
@@ -1170,8 +1175,13 @@ function iface_event(type, name, data) {
 
 function iface_hostapd_notify(ifname, iface, state)
 {
+	// a wired port has no PHY whose AP side would follow its channel
+	if (wpas.data.wired[ifname])
+		return;
+
 	if (wpas.data.iface_stopping[ifname])
 		return;
+
 	let status = iface.status();
 	let ubus = wpas.data.ubus;
 	let msg = {};
@@ -1327,6 +1337,63 @@ function iface_ubus_notify(ifname, event)
 	obj.notify('ctrl-event', event, null, null, null, -1);
 }
 
+function ctrl_reply_parse(reply, prefix)
+{
+	let data = {};
+
+	for (let line in split(reply ?? "", "\n")) {
+		let pos = index(line, "=");
+		if (pos <= 0)
+			continue;
+
+		let key = substr(line, 0, pos);
+		if (prefix && index(key, prefix) != 0)
+			continue;
+
+		data[key] = substr(line, pos + 1);
+	}
+
+	return data;
+}
+
+function iface_eapol_count(ifname, ev)
+{
+	let counts = wpas.data.eapol[ifname];
+	if (!counts)
+		return;
+
+	if (index(ev, "CTRL-EVENT-EAP-SUCCESS") == 0)
+		counts.success++;
+	else if (index(ev, "CTRL-EVENT-EAP-FAILURE") == 0)
+		counts.failure++;
+}
+
+function ctrl_int(value)
+{
+	return value != null ? int(value) : null;
+}
+
+function iface_eapol_status(ifname, iface)
+{
+	let status = ctrl_reply_parse(iface.ctrl("STATUS-VERBOSE"));
+	let counts = wpas.data.eapol[ifname] ?? {};
+
+	return {
+		wpa_state: status.wpa_state,
+		pae_state: status["Supplicant PAE state"],
+		port_status: status.suppPortStatus,
+		eap_state: status["EAP state"],
+		eap_method: status.selectedMethod,
+		held_period: ctrl_int(status.heldPeriod),
+		auth_period: ctrl_int(status.authPeriod),
+		start_period: ctrl_int(status.startPeriod),
+		max_start: ctrl_int(status.maxStart),
+		mib: ctrl_reply_parse(iface.ctrl("MIB"), "dot1xSupp"),
+		success_count: counts.success ?? 0,
+		failure_count: counts.failure ?? 0,
+	};
+}
+
 function iface_ubus_add(ifname)
 {
 	let ubus = wpas.data.ubus;
@@ -1388,6 +1455,26 @@ function iface_ubus_add(ifname)
 				};
 			},
 		},
+		eapol_status: {
+			args: {},
+			call: (req) => {
+				let iface = wpas.interfaces[ifname];
+				if (!iface)
+					return libubus.STATUS_NOT_FOUND;
+
+				return iface_eapol_status(ifname, iface);
+			},
+		},
+		eapol_reset: {
+			args: {},
+			call: (req) => {
+				if (!wpas.interfaces[ifname])
+					return libubus.STATUS_NOT_FOUND;
+
+				wpas.data.eapol[ifname] = { success: 0, failure: 0 };
+				return 0;
+			},
+		},
 	});
 	wpas.data.iface_ubus[ifname] = obj;
 }
@@ -1407,6 +1494,7 @@ return {
 		return mld_bss_allowed(mld, bss);
 	},
 	iface_add: function(name, obj) {
+		wpas.data.eapol[name] = { success: 0, failure: 0 };
 		iface_ubus_add(name);
 		iface_event("add", name);
 	},
@@ -1414,8 +1502,11 @@ return {
 		iface_event("remove", name);
 		iface_ubus_remove(name);
 		delete wpas.data.dpp_hooks[name];
+		delete wpas.data.eapol[name];
+		delete wpas.data.wired[name];
 	},
 	ctrl_event: function(name, iface, ev) {
+		iface_eapol_count(name, ev);
 		iface_ubus_notify(name, ev);
 
 		// The set of links of an associated MLD can change without a state

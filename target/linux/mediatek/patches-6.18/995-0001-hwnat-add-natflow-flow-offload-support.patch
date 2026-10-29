@@ -2826,17 +2826,18 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  struct ppp_channel {
 --- a/include/linux/soc/mediatek/mtk_wed.h
 +++ b/include/linux/soc/mediatek/mtk_wed.h
-@@ -8,6 +8,9 @@
+@@ -8,6 +8,10 @@
  #include <linux/skbuff.h>
  #include <linux/netdevice.h>
  
 +/* ppe_check returns true for control copies the caller must drop. */
 +#define MTK_WED_PPE_CHECK_RETURNS_BOOL
++#define MTK_WED_PPE_CHECK_HAS_WCID
 +
  #define MTK_WED_TX_QUEUES		2
  #define MTK_WED_RX_QUEUES		2
  #define MTK_WED_RX_PAGE_QUEUES		3
-@@ -207,7 +210,7 @@ struct mtk_wed_ops {
+@@ -207,7 +211,7 @@ struct mtk_wed_ops {
  	int (*msg_update)(struct mtk_wed_device *dev, int cmd_id,
  			  void *data, int len);
  	void (*detach)(struct mtk_wed_device *dev);
@@ -2845,7 +2846,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  			  u32 reason, u32 hash, u16 wcid);
  
  	void (*stop)(struct mtk_wed_device *dev);
-@@ -335,8 +338,7 @@ static inline bool mtk_wed_device_active
+@@ -335,8 +339,7 @@ static inline bool mtk_wed_device_active
  #define mtk_wed_device_irq_get(_dev, _mask) 0
  #define mtk_wed_device_irq_set_mask(_dev, _mask) do {} while (0)
  #define mtk_wed_device_rx_ring_setup(_dev, _ring, _regs, _reset) -ENODEV
