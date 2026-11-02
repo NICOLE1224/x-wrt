@@ -12,6 +12,17 @@
 	aliases {
 		serial0 = &uart0;
 		label-mac-device = &gmac0;
+		led-upgrade = &tr9_white_status;
+	};
+
+	status-leds {
+		compatible = "gpio-leds";
+
+		red {
+			label = "tr9:red:status";
+			gpios = <&pio 6 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
 	};
 
 	chosen {
@@ -56,27 +67,52 @@
 			gpios = <&pio 28 GPIO_ACTIVE_HIGH>;
 		};
 	};
+
+	pwm_led: pwm-leds {
+		compatible = "pwm-leds";
+		pinctrl-names = "default";
+		pinctrl-0 = <&tr9_pwm1>;
+
+		tr9_white_status: led {
+			label = "tr9:white:status";
+			pwms = <&pwm 1 50000 0>;
+			max-brightness = <255>;
+			linux,default-trigger = "default-on";
+		};
+	};
 };
 
 &cpu_thermal {
 	cooling-maps {
+		cpu-active-hot {
+			cooling-device = <&cpu0
+				THERMAL_NO_LIMIT
+				THERMAL_NO_LIMIT>;
+			trip = <&cpu_trip_active_hot>;
+		};
+
 		cpu-active-high {
 			cooling-device = <&fan 8 8>;
+			trip = <&cpu_trip_active_high>;
 		};
 
 		cpu-active-low {
 			cooling-device = <&fan 4 4>;
+			trip = <&cpu_trip_active_med>;
 		};
 
 		cpu-passive {
 			cooling-device = <&fan 0 0>;
+			trip = <&cpu_trip_active_low>;
 		};
 	};
 };
 
 &fan {
-	cooling-levels = <0 32 64 96 128 150 192 224 255>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&fan_pwm2_pins>;
 	fan-supply = <&reg_fan_power>;
+	cooling-levels = <0 32 64 96 128 150 192 224 255>;
 	interrupt-parent = <&pio>;
 	interrupts = <43 IRQ_TYPE_EDGE_FALLING>;
 	pulses-per-revolution = <2>;
@@ -139,6 +175,13 @@
 };
 
 &pio {
+	tr9_pwm1: tr9-pwm1-pins {
+		mux {
+			function = "pwm";
+			groups = "pwm1_0";
+		};
+	};
+
 	fan_pwm2_pins: fan-pwm2-pins {
 		mux {
 			function = "pwm";
@@ -155,8 +198,6 @@
 };
 
 &pwm {
-	pinctrl-names = "default";
-	pinctrl-0 = <&fan_pwm2_pins>;
 	status = "okay";
 };
 
