@@ -348,17 +348,16 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
  	.ndo_bpf		= mtk_xdp,
  	.ndo_xdp_xmit		= mtk_xdp_xmit,
  	.ndo_select_queue	= mtk_select_queue,
-@@ -5906,7 +6011,8 @@ static int mtk_probe(struct platform_dev
- err_unreg_netdev:
- 	mtk_unreg_dev(eth);
- err_deinit_ppe:
+@@ -5920,7 +6025,7 @@ static int mtk_probe(struct platform_dev
+ 		netif_napi_del(&eth->rx_napi);
+ 		free_netdev(eth->dummy_dev);
+ 	}
 -	mtk_ppe_deinit(eth);
 +	mtk_eth_offload_exit(eth);
-+	//mtk_ppe_deinit(eth);
  	mtk_mdio_cleanup(eth);
  err_free_dev:
  	mtk_free_dev(eth);
-@@ -5926,6 +6032,8 @@ static void mtk_remove(struct platform_d
+@@ -5940,6 +6045,8 @@ static void mtk_remove(struct platform_d
  	struct mtk_mac *mac;
  	int i;
  

@@ -4,22 +4,21 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=airoha-ponctl
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_URL:=https://github.com/pbs05/openwrt-pon-userspace/tree/main/airoha-ponctl
 
 PKG_LICENSE:=GPL-2.0-only
-PKG_BUILD_DEPENDS:=rust/host
 PKG_BUILD_PARALLEL:=1
 
 include $(INCLUDE_DIR)/package.mk
-include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk
+include $(INCLUDE_DIR)/rust-package.mk
 
 define Package/airoha-ponctl
   SECTION:=net
   CATEGORY:=Network
   SUBMENU:=PON
   TITLE:=Airoha PON control utility
-  DEPENDS:=$(RUST_ARCH_DEPENDS) +kmod-airoha-xpon
+  DEPENDS:=$(RUST_PKG_DEPENDS) +kmod-airoha-xpon
 endef
 
 define Package/airoha-ponctl/description
