@@ -3,25 +3,31 @@ From: Chen Minqiang <ptpt52@gmail.com>
 Date: Fri, 15 May 2026 11:46:17 +0800
 Subject: [PATCH] dsa: disable offload
 
+Keep standalone port state changes working: drivers such as rtl8365mb
+initialize their ports as disabled and rely on DSA to enable forwarding.
+Only reject state changes for ports offloading a bridge.
+
 Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 ---
- net/dsa/port.c   |  4 ++++
+ net/dsa/port.c   |  6 ++++++
  net/dsa/switch.c | 20 ++++++++++----------
  net/dsa/tag.h    |  4 +---
- 3 files changed, 15 insertions(+), 13 deletions(-)
+ 3 files changed, 17 insertions(+), 13 deletions(-)
 
 --- a/net/dsa/port.c
 +++ b/net/dsa/port.c
-@@ -133,6 +133,8 @@ int dsa_port_set_state(struct dsa_port *
+@@ -133,6 +133,10 @@ int dsa_port_set_state(struct dsa_port *
  	struct dsa_switch *ds = dp->ds;
  	int port = dp->index;
  
-+	return -EOPNOTSUPP;
++	/* Preserve basic port enable/disable without offloading bridge STP. */
++	if (dp->bridge)
++		return -EOPNOTSUPP;
 +
  	if (!ds->ops->port_stp_state_set)
  		return -EOPNOTSUPP;
  
-@@ -796,6 +798,8 @@ int dsa_port_vlan_filtering(struct dsa_p
+@@ -796,6 +800,8 @@ int dsa_port_vlan_filtering(struct dsa_p
  	bool apply;
  	int err;
  

@@ -1924,7 +1924,7 @@ Signed-off-by: Chen Minqiang <ptpt52@gmail.com>
 +		case DSA_TAG_PROTO_YT922X_4B:
 +			if (*port > 8)
 +				return -EINVAL;
-+			*vid = dsa_tag_yt922x_4b_port(*port);
++			*vid = yt922x_4b_port_tag(*port);
 +			return 0;
 +#endif
 +		case DSA_TAG_PROTO_MTK:
