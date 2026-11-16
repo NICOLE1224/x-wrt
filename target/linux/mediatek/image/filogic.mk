@@ -1067,6 +1067,17 @@ define Device/bazis_ax3000wm
 endef
 TARGET_DEVICES += bazis_ax3000wm
 
+define Device/benton_sn-r1
+  DEVICE_VENDOR := Benton
+  DEVICE_MODEL := SN-R1
+  DEVICE_DTS := mt7981b-benton-sn-r1
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \
+	e2fsprogs f2fsck mkf2fs
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += benton_sn-r1
+
 define Device/buffalo_wsr-3000ax4p
   DEVICE_VENDOR := BUFFALO
   DEVICE_MODEL := WSR-3000AX4P
@@ -2160,6 +2171,7 @@ define Device/glinet_gl-be10000-common
 	kmod-hwmon-pwmfan kmod-usb3 kmod-backlight-pwm kmod-drm-panel-mipi-dbi \
 	kmod-input-touchscreen-hynitron-cst3530 kmod-input-evdev \
 	input-support video-support mipi-dbi-glinet-gl-be10000
+  FEED_DEVICE_PACKAGES := glinet-panel-ui
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 256k
   PAGESIZE := 4096
@@ -2215,6 +2227,7 @@ define Device/glinet_gl-be14000
 	kmod-input-touchscreen-hynitron-cst3530 kmod-input-evdev input-support \
 	video-support mt7988-wo-firmware rtl8261c-firmware e2fsprogs f2fsck \
 	mkf2fs bridger kmod-sfp kmod-i2c-gpio
+  FEED_DEVICE_PACKAGES := glinet-panel-ui
   IMAGES := sysupgrade.bin factory.bin
   IMAGE/factory.bin := append-kernel | pad-to 32M | append-rootfs
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata

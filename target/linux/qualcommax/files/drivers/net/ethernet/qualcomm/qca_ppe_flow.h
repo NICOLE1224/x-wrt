@@ -31,6 +31,23 @@ struct ppe_flow_data {
 };
 
 struct ppe_flow_entry {
+	/* What ppe_flow_xmit() reads, first so that it shares a cache line:
+	 * the egress, and the tuple every frame of the flow leaves the PPE
+	 * with, after translation, source first.
+	 */
+	u64 xdev;
+	unsigned long ct;
+	u16 vid;
+	u8 xport;
+	u8 dscp;
+	union {
+		__be32 v4[2];
+		struct in6_addr v6[2];
+	} addr;
+	__be16 port[2];
+	u8 proto;
+	bool v6;
+
 	struct rhash_head node;
 	struct list_head list;
 	struct flow_block *block;
@@ -54,11 +71,6 @@ struct ppe_flow_entry {
 	int uplink;
 	int in_uplink;
 	int session;
-	int xdev;
-	unsigned long ct;
-	u16 vid;
-	u8 xport;
-	u8 dscp;
 	u8 iport;
 	u8 oport;
 	u16 ivid;
@@ -68,6 +80,7 @@ struct ppe_flow_entry {
 	u64 unread_packets;
 	u64 unread_bytes;
 	unsigned long last_used;
+	struct rcu_head rcu;
 };
 
 /* All common entry operations require flow_lock, then vlan_lock. */

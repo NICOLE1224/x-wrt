@@ -57,6 +57,8 @@ class InitramfsPackagesTest(unittest.TestCase):
             "builtin-tool": "",
             "device-tool": "device-lib",
             "device-lib": "",
+            "feed-tool": "feed-lib",
+            "feed-lib": "",
             "other-device-tool": "",
             "profile-only-tool": "profile-only-lib",
             "profile-only-lib": "",
@@ -98,6 +100,7 @@ class InitramfsPackagesTest(unittest.TestCase):
             "CONFIG_PACKAGE_builtin-tool=y\n"
             "CONFIG_PACKAGE_recovery-tool=m\n"
             "CONFIG_PACKAGE_device-tool=m\n"
+            "CONFIG_PACKAGE_feed-tool=m\n"
             "CONFIG_PACKAGE_other-device-tool=m\n"
             "CONFIG_PACKAGE_profile-only-tool=m\n"
             + ("CONFIG_USE_APK=y\nCONFIG_SIGNED_PACKAGES=y\n" if use_apk else "")
@@ -125,8 +128,10 @@ class InitramfsPackagesTest(unittest.TestCase):
             "CONFIG_TARGET_DEVICE_PACKAGES_test_unit_DEVICE_device_a:=profile-only-tool -device-tool\n"
             "DEVICE_CHECK_PROFILE=y\n"
             "DEVICE_PACKAGES:=device-tool -builtin-tool\n"
+            "FEED_DEVICE_PACKAGES:=feed-tool unavailable-feed-tool\n"
             "$(eval $(call Device/Check/Common,device_a))\n"
             "DEVICE_PACKAGES:=other-device-tool\n"
+            "FEED_DEVICE_PACKAGES:=\n"
             "$(eval $(call Device/Check/Common,device_b))\n"
             "PACKAGES_testid:=device-tool\n"
             "device-roots: initramfs-target-dir-$(INITRAMFS_ID/device_a) "
@@ -142,7 +147,8 @@ class InitramfsPackagesTest(unittest.TestCase):
             with self.subTest(per_device=per_device, extras=extra_packages):
                 result = self.make(path, *settings, "ids")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                ids = result.stdout.splitlines()
+                ids = [line for line in result.stdout.splitlines()
+                       if not line.startswith("WARNING:")]
                 self.assertEqual(len(ids), 3)
                 self.assertTrue(all(len(root_id) == 8 for root_id in ids[:2]))
                 self.assertNotEqual(*ids[:2])
@@ -153,7 +159,7 @@ class InitramfsPackagesTest(unittest.TestCase):
                     for pkg in ("base-files", "builtin-tool"):
                         self.assertTrue((device_root / f"usr/share/{pkg}").is_file())
                         self.assertTrue((device_root / f"{pkg}.configured").is_file())
-                    for pkg in ("device-tool", "device-lib"):
+                    for pkg in ("device-tool", "device-lib", "feed-tool", "feed-lib"):
                         self.assertEqual((device_root / f"usr/share/{pkg}").is_file(),
                                          index == 0)
                     self.assertEqual((device_root / "usr/share/other-device-tool").is_file(),
@@ -163,11 +169,16 @@ class InitramfsPackagesTest(unittest.TestCase):
                                          extra_packages)
                     for pkg in ("profile-only-tool", "profile-only-lib"):
                         self.assertFalse((device_root / f"usr/share/{pkg}").exists())
+                    self.assertFalse((device_root / "usr/share/unavailable-feed-tool").exists())
+                self.assertIn("feed package 'unavailable-feed-tool' is not available, skipping it",
+                              result.stdout)
                 if per_device:
                     regular_device = path / f"kernel/target-dir-{ids[2]}"
                     self.assertTrue((regular_device / "usr/share/profile-only-tool").is_file())
                     self.assertTrue((regular_device / "usr/share/profile-only-lib").is_file())
                     self.assertFalse((regular_device / "usr/share/device-tool").exists())
+                    self.assertTrue((regular_device / "usr/share/feed-tool").is_file())
+                    self.assertTrue((regular_device / "usr/share/feed-lib").is_file())
                 regular = path / "kernel/target-dir-testid"
                 self.assertTrue((regular / "usr/share/device-tool").is_file())
                 self.assertFalse((regular / "usr/share/recovery-tool").exists())

@@ -1166,7 +1166,7 @@ function iface_event(type, name, data) {
 
 	data ??= {};
 	data.name = name;
-	let req = wpas.data.obj.notify(`iface.${type}`, data, null, null, null, -1);
+	let req = wpas.data.obj?.notify(`iface.${type}`, data, null, null, null, -1);
 	if (req)
 		req.abort();
 
@@ -1408,7 +1408,8 @@ function iface_ubus_add(ifname)
 				if (!iface)
 					return libubus.STATUS_NOT_FOUND;
 
-				iface.ctrl("RECONFIGURE");
+				if (iface.ctrl("RECONFIGURE") != "OK")
+					return libubus.STATUS_UNKNOWN_ERROR;
 
 				// the file of a station MLD holds the frequencies of one radio only
 				let mld = wpas.data.mld[ifname];
@@ -1480,6 +1481,15 @@ function iface_ubus_add(ifname)
 }
 
 return {
+	// wpa_supplicant removes its interfaces after this hook and serves no
+	// ubus request from here on, so a caller that still resolves the object
+	// waits for its own timeout.
+	terminate: function() {
+		wpas.data.obj?.remove();
+		delete wpas.data.obj;
+		for (let name in keys(wpas.data.iface_ubus))
+			iface_ubus_remove(name);
+	},
 	prepare: iface_hostapd_prepare,
 	shutdown: function() {
 		config_clear();

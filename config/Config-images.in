@@ -64,9 +64,11 @@ menu "Target Images"
 			help
 			  Space-separated list of extra packages to install into initramfs
 			  in addition to packages selected as built-in (*) and the target's
-			  DEVICE_PACKAGES for the current device. Device packages selected as
-			  built-in (*) or module (M) are included regardless of the per-device
-			  root filesystem setting. Dependencies are installed automatically.
+			  DEVICE_PACKAGES and available FEED_DEVICE_PACKAGES for the current
+			  device. Missing feed packages are skipped with a warning.
+			  Device packages selected as built-in (*) or module (M) are included
+			  regardless of the per-device root filesystem setting. Dependencies
+			  are installed automatically.
 			  Leave empty to add no extra packages.
 			  CONFIG_TARGET_DEVICE_PACKAGES_* does not add packages to initramfs.
 

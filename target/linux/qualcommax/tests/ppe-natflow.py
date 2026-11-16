@@ -37,7 +37,10 @@ data = data_header[data_header.index("struct ppe_flow_data {"):
                    data_header.index("struct ppe_flow_entry {")]
 backend = no_includes((driver / "qca_ppe_natflow.c").read_text())
 core = (driver / "qca_ppe_flow_offload.c").read_text()
-free = function(core, "void ppe_flow_free(struct qca_ppe_priv *priv,")
+free = "\n".join(function(core, signature) for signature in (
+    "static void ppe_flow_entry_free_rcu(struct rcu_head *head)",
+    "void ppe_flow_free(struct qca_ppe_priv *priv,",
+))
 common = "\n".join(function(core, signature) for signature in (
     "static void ppe_flow_drop(struct qca_ppe_priv *priv,",
     "static void ppe_flow_purge_ingress(struct qca_ppe_priv *priv,",

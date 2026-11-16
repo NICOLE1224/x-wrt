@@ -97,6 +97,27 @@ static int bh_depth;
 #define rcu_read_unlock() ((void)0)
 #define synchronize_rcu() ((void)0)
 
+struct rcu_head {
+	struct rcu_head *next;
+	void (*func)(struct rcu_head *);
+};
+static struct rcu_head *rcu_pending;
+static void call_rcu(struct rcu_head *head, void (*func)(struct rcu_head *))
+{
+	head->func = func;
+	head->next = rcu_pending;
+	rcu_pending = head;
+}
+static void rcu_barrier(void)
+{
+	while (rcu_pending) {
+		struct rcu_head *head = rcu_pending;
+
+		rcu_pending = head->next;
+		head->func(head);
+	}
+}
+
 struct workqueue_struct;
 struct work_struct {
 	void (*fn)(struct work_struct *);
@@ -185,6 +206,8 @@ struct qca_ppe_priv {
 	const struct ppe_data *data;
 };
 struct ppe_flow_entry {
+	unsigned long ct;
+	struct rcu_head rcu;
 	struct ppe_natflow_pair *pair;
 	struct list_head list;
 	void *block;
@@ -326,6 +349,7 @@ static natflow_t *natflow_session_get(struct nf_conn *ct) { return &ct->nf; }
 static natflow_fakeuser_t *natflow_user_get(struct nf_conn *ct) { return ct->user; }
 static struct fakeuser_data_t *natflow_fakeuser_data(natflow_fakeuser_t *u) { return &u->data; }
 static void nf_conntrack_get(int *ref) { (*ref)++; }
+static void nf_conntrack_put(int *ref) { assert(--*ref >= 1); }
 static void nf_ct_put(struct nf_conn *ct) { assert(--ct->ct_general >= 1); }
 #define nf_ct_zone(ct) (ct)
 #define nf_ct_zone_id(zone, dir) 0
@@ -355,6 +379,7 @@ static struct net_device lan, wan;
 static void setup(void)
 {
 	assert(!hardware_entries);
+	assert(!rcu_pending);
 	priv = (struct qca_ppe_priv){ .data = &chip };
 	/* Ingress classification may select the PVID's VSI, not port_vsi. */
 	priv.pvid_vsi[1] = priv.pvid_vsi[2] = 7;
@@ -415,6 +440,7 @@ static void finish(struct nf_conn *ct)
 	assert(lan.refs == 1 && wan.refs == 1 && list_empty(&priv.flow_list));
 	for (int i = 0; i < 16; i++) assert(!priv.uplink[i].ref && !sessions[i].ref);
 	ppe_natflow_exit(&priv); free(natflow_qca_slots); natflow_qca_slots = NULL;
+	rcu_barrier();
 }
 
 struct events { int ready, released, error; };
@@ -435,6 +461,23 @@ int main(void)
 	struct nf_conn ct;
 	struct ppe_natflow_pair *pair;
 	struct natflow_qca_ticket *ticket;
+
+	/* A CPU-path reader can retain the entry and conntrack until grace ends. */
+	setup(); ct = connection();
+	struct ppe_flow_entry *entry = calloc(1, sizeof(*entry));
+	entry->uplink = entry->session = entry->in_uplink = -1;
+	entry->ct = (unsigned long)&ct | 1UL;
+	ct.ct_general++;
+	list_add_tail(&entry->list, &priv.flow_list);
+	hardware_entries++;
+	mutex_lock(&priv.flow_lock); mutex_lock(&priv.vlan_lock);
+	ppe_flow_free(&priv, entry);
+	mutex_unlock(&priv.vlan_lock); mutex_unlock(&priv.flow_lock);
+	assert(!hardware_entries && list_empty(&priv.flow_list));
+	assert(ct.ct_general == 2 && rcu_pending == &entry->rcu);
+	rcu_barrier();
+	assert(ct.ct_general == 1 && !rcu_pending);
+	finish(&ct);
 
 	setup(); ct = connection();
 	natflow_qca_try(&ct, &ct.nf);
@@ -536,6 +579,7 @@ int main(void)
 	setup(); ct = connection(); natflow_qca_try(&ct, &ct.nf);
 	/* Device teardown also drains requests which have not reached hardware. */
 	ppe_natflow_exit(&priv);
+	rcu_barrier();
 	assert(!priv.natflow && !hardware_entries && ct.ct_general == 1);
 	assert(lan.refs == 1 && wan.refs == 1);
 	assert(ppe_natflow_ft_get(&priv) == -ESHUTDOWN);
@@ -627,6 +671,6 @@ int main(void)
 	assert(extra_up == -1 && extra_session == -1);
 	for (int i = 0; i < 16; i++) ppe_flow_path_put(&priv, up[i], session[i]);
 	mutex_unlock(&priv.vlan_lock); mutex_unlock(&priv.flow_lock); finish(&ct);
-	puts("natflow/PPE: lifecycle, NAT, VLAN/PPPoE directions, ingress preparation, MTU, session changes, rollback and capacity PASS");
+	puts("natflow/PPE: RCU release, lifecycle, NAT, VLAN/PPPoE directions, ingress preparation, MTU, session changes, rollback and capacity PASS");
 	return 0;
 }

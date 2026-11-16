@@ -74,15 +74,18 @@ CONFIG_TARGET_INITRAMFS_PACKAGES="tcpdump"
 ```
 
 Each device's initramfs includes packages selected as `y`, packages declared in
-its target `DEVICE_PACKAGES` (whether selected as `y` or `m`), and the extra
-packages in `CONFIG_TARGET_INITRAMFS_PACKAGES`, with their dependencies. Device
-packages are included even when `CONFIG_TARGET_PER_DEVICE_ROOTFS` is disabled.
+its target `DEVICE_PACKAGES` and available `FEED_DEVICE_PACKAGES` (whether
+selected as `y` or `m`), and the extra packages in
+`CONFIG_TARGET_INITRAMFS_PACKAGES`, with their dependencies. Device packages are
+included even when `CONFIG_TARGET_PER_DEVICE_ROOTFS` is disabled.
 `CONFIG_TARGET_DEVICE_PACKAGES_*` is not used as an initramfs package source;
 packages listed there are included only if also selected as `y`, required by
-`DEVICE_PACKAGES`, listed in `CONFIG_TARGET_INITRAMFS_PACKAGES`, or pulled in as
-dependencies. The regular firmware package selection is unchanged. Every requested
-package must be selected as `y` or `m` in the build configuration; use `m` for
-packages needed only in initramfs. In the example above, `tcpdump` is added only
+`DEVICE_PACKAGES` or `FEED_DEVICE_PACKAGES`, listed in
+`CONFIG_TARGET_INITRAMFS_PACKAGES`, or pulled in as dependencies. Missing feed
+packages are skipped with a warning. The regular firmware package selection is
+unchanged. Every requested package must be selected as `y` or `m` in the build
+configuration; use `m` for packages needed only in initramfs. In the example
+above, `tcpdump` is added only
 to initramfs. The `files/` overlay is applied to both root filesystems.
 
 Leave the list empty to include only the `y` packages and the current device's
